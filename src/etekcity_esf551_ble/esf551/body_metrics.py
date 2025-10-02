@@ -7,12 +7,12 @@ from math import floor
 from bleak.backends.scanner import BaseBleakScanner
 
 from .const import IMPEDANCE_KEY, WEIGHT_KEY
-from .parser import (
+from ..parser import (
     BluetoothScanningMode,
-    EtekcitySmartFitnessScale,
     ScaleData,
     WeightUnit,
 )
+from .parser import ESF551Scale
 
 
 class Sex(IntEnum):
@@ -342,11 +342,11 @@ def _as_dictionary(obj: BodyMetrics) -> dict[str, int | float]:
     return {prop: getattr(obj, prop) for prop in dir(obj) if not prop.startswith("__")}
 
 
-class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
+class EtekcitySmartFitnessScaleWithBodyMetrics(ESF551Scale):
     """
     Extended Etekcity Smart Fitness Scale interface with body metrics calculations.
 
-    This class extends the basic scale interface to automatically calculate
+    This class extends the ESF-551 scale interface to automatically calculate
     body composition metrics based on the user's profile (sex, age, height)
     and the measurements from the scale (weight, impedance).
 
@@ -380,13 +380,14 @@ class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
                           to this value upon connection.
             scanning_mode: Mode for BLE scanning (ACTIVE or PASSIVE).
             adapter: Bluetooth adapter to use (Linux only).
-            proxy_mode: Bluetooth proxy mode (NATIVE, PROXY, or HYBRID).
-            esphome_clients: List of ESPHome API clients for proxy mode.
+            bleak_scanner_backend: Optional custom BLE scanner backend.
         """
         self._sex = sex
         self._birthdate = birthdate
         self._height_m = height_m
         self._original_callback = notification_callback
+
+        # Initialize the parent ESF551Scale
         super().__init__(
             address,
             lambda data: self._wrapped_notification_callback(

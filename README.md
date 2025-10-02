@@ -1,8 +1,30 @@
-# Etekcity ESF-551 BLE
+# Etekcity ESF-551 & ESF-24 BLE
 
-This package provides a basic unofficial interface for interacting with [Etekcity ESF-551 Smart Fitness Scale](https://etekcity.com/products/smart-fitness-scale-esf551) using Bluetooth Low Energy (BLE). It allows you to easily connect to the scale, receive weight and impedance measurements, manage the display unit settings, and calculate various body metrics.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports both the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551) and [Etekcity ESF-24](https://etekcity.com/products/esf24-smart-fitness-scale) models.
 
-It has only been tested on the ESF-551 model. I have no idea whether it might also work with some other bluetooth bathroom scale models from Etekcity. If you try it with a different model, please let me know whether it works or not.
+## Features
+
+- **ESF-551**: Full feature support including weight, impedance, body metrics, and display unit management
+- **ESF-24**: Experimental weight-only support (kilograms only, protocol under analysis)
+- Easy connection and notification handling
+- Body metrics calculations (ESF-551 only)
+- Display unit management (ESF-551 only)
+
+## Supported Models
+
+| Model | Status | Features |
+|-------|--------|----------|
+| ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
+| ESF-24 | 🔬 Experimental | Weight only (kg), limited protocol analysis |
+
+## Version Status
+
+**v0.4.0-beta.1** (Pre-Release):
+- ✅ ESF-551: Fully supported and stable
+- 🔬 ESF-24: Experimental support (protocol analysis ongoing)
+- ⚠️ Breaking changes from v0.3.x (architecture refactoring)
+
+**Note**: This is a pre-release version. PyPI will not automatically suggest upgrades from stable versions (v0.3.x) to this beta version.
 
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by, or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand), or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
 
@@ -27,7 +49,7 @@ import asyncio
 from etekcity_esf551_ble import (
     IMPEDANCE_KEY,
     WEIGHT_KEY,
-    EtekcitySmartFitnessScale,
+    ESF551Scale,
     ScaleData,
     WeightUnit,
     BodyMetrics,
@@ -40,8 +62,8 @@ async def main():
         print(f"Display Unit: {data.display_unit.name}")
         if IMPEDANCE_KEY in data.measurements:
             print(f"Impedance: {data.measurements[IMPEDANCE_KEY]} Ω")
-            
-            # Calculate body metrics
+
+            # Calculate body metrics (ESF-551 only)
             # Note: Replace with your actual height, age and sex
             body_metrics = BodyMetrics(
                 weight_kg=data.measurements[WEIGHT_KEY],
@@ -63,8 +85,8 @@ async def main():
             print(f"Protein Percentage: {body_metrics.protein_percentage:.1f}%")
             print(f"Metabolic Age: {body_metrics.metabolic_age} years")
 
-    # Replace XX:XX:XX:XX:XX:XX with your scale's Bluetooth address
-    scale = EtekcitySmartFitnessScale("XX:XX:XX:XX:XX:XX", notification_callback)
+    # Create scale (replace XX:XX:XX:XX:XX:XX with your scale's Bluetooth address)
+    scale = ESF551Scale("XX:XX:XX:XX:XX:XX", notification_callback)
     scale.display_unit = WeightUnit.KG  # Set display unit to kilograms
 
     await scale.async_start()
@@ -73,22 +95,50 @@ async def main():
 
 asyncio.run(main())
 ```
+
+## Multi-Model Usage
+
+For different scale models:
+
+```python
+# ESF-551 (full features)
+from etekcity_esf551_ble import ESF551Scale
+scale = ESF551Scale(address, callback)
+
+# ESF-24 (experimental, weight-only)
+from etekcity_esf551_ble import ESF24Scale
+scale = ESF24Scale(address, callback)  # Always reports in kg
+
+# Backward compatibility (still works)
+from etekcity_esf551_ble import EtekcitySmartFitnessScale
+scale = EtekcitySmartFitnessScale(address, callback)  # Creates ESF-551 scale
+```
 For a real-life usage example of this library, check out the [Etekcity Fitness Scale BLE Integration for Home Assistant](https://github.com/ronnnnnnnnnnnnn/etekcity_fitness_scale_ble).
 
 
 ## API Reference
 
-### `EtekcitySmartFitnessScale`
+### Scale Classes
 
-The main class for interacting with the scale.
+#### `EtekcitySmartFitnessScale` (Abstract Base)
 
-#### Methods:
+Abstract base class for all scale implementations.
+
+#### `ESF551Scale`
+
+Implementation for ESF-551 scales with full feature support.
+
+#### `ESF24Scale`
+
+Experimental implementation for ESF-24 scales (weight-only).
+
+#### Common Methods:
 
 - `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], display_unit: WeightUnit = None)`
 - `async_start()`: Start scanning for and connecting to the scale.
 - `async_stop()`: Stop the connection to the scale.
 
-#### Properties:
+#### Common Properties:
 
 - `display_unit`: Get or set the display unit (WeightUnit.KG, WeightUnit.LB or WeightUnit.ST). Returns None if the display unit is currently unknown (not set by the user and not yet received from the scale together with a stable weight measurement).
 - `hw_version`: Get the hardware version of the scale (read-only).
