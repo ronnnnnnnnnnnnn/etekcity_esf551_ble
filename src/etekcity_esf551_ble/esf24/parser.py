@@ -34,7 +34,7 @@ def parse(payload: bytearray) -> dict[str, int | float | None]:
         and payload[0:3] == b"\x10\x0b\x15"
     ):
         data = dict[str, int | float | None]()
-        weight = int(data[3:5].hex(), 16)
+        weight = int(payload[3:5].hex(), 16)
         data[WEIGHT_KEY] = round(float(weight) / 100, 2)
         return data
     return None
