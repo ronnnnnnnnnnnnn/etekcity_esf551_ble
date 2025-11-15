@@ -1,23 +1,24 @@
 """ESF-24 scale implementation (experimental)."""
 
-from ast import Pass
 import asyncio
 import logging
 import struct
 import time
-from typing import Callable
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import BaseBleakScanner
 
-from ..const import ALIRO_CHARACTERISTIC_UUID, WEIGHT_CHARACTERISTIC_UUID_NOTIFY, DISPLAY_UNIT_KEY, WEIGHT_KEY
-
-from ..parser import BluetoothScanningMode, EtekcitySmartFitnessScale, WeightUnit, ScaleData
+from ..const import ALIRO_CHARACTERISTIC_UUID, WEIGHT_CHARACTERISTIC_UUID_NOTIFY, WEIGHT_KEY
+from ..parser import BluetoothScanningMode, EtekcitySmartFitnessScale, ScaleData, WeightUnit
 from .const import CMD_END_MEASUREMENT, CMD_SET_DISPLAY_UNIT
 
 
 _LOGGER = logging.getLogger(__name__)
+
+_STATE_UNIT_SET = 1
+_STATE_MEASUREMENT_INIT = 2
+_EPOCH_OFFSET = 946656000
+
 
 def build_unit_update_command(desired_unit: WeightUnit) -> bytearray:
     """
@@ -30,6 +31,8 @@ def build_unit_update_command(desired_unit: WeightUnit) -> bytearray:
         bytearray: The payload to send to the scale to update the display unit
     """
     payload = CMD_SET_DISPLAY_UNIT.copy()
+    payload[3] &= 0xF0
+    payload[8] &= 0xF0
     if desired_unit == WeightUnit.KG:
         payload[3] |= 1
         payload[8] |= 1
@@ -41,14 +44,16 @@ def build_unit_update_command(desired_unit: WeightUnit) -> bytearray:
         payload[8] |= 8
     return payload
 
+
 def build_measurement_initiation_command() -> bytearray:
     """Return a fresh measurement initiation command with current timestamp and checksum."""
     cmd = bytearray(8)
     cmd[0:3] = b"\x20\x08\x15"
-    ts = int(time.time()) - 946656000
-    struct.pack_into('<I', cmd, 3, ts)
+    ts = int(time.time()) - _EPOCH_OFFSET
+    struct.pack_into("<I", cmd, 3, ts)
     cmd[7] = sum(cmd[0:7]) & 0xFF
     return cmd
+
 
 def parse_weight(payload: bytearray) -> dict[str, int | float | None]:
     """
@@ -60,37 +65,57 @@ def parse_weight(payload: bytearray) -> dict[str, int | float | None]:
     Returns:
         dict: Dictionary containing parsed data with the following keys:
             - "weight": Weight value in kilograms
-
-    Returns None if the payload format is invalid or unrecognized.
-
-    Note: This is experimental and may need adjustment once the actual
-    ESF-24 BLE protocol is analyzed.
     """
     data = dict[str, int | float | None]()
     weight = int(payload[3:5].hex(), 16)
     data[WEIGHT_KEY] = round(float(weight) / 100, 2)
     return data
 
+
 class ESF24Scale(EtekcitySmartFitnessScale):
     """
     ESF-24 scale implementation (experimental, weight-only support).
-    
-    Note: This is an experimental implementation. The ESF-24 protocol is not fully
-    analyzed yet. Currently only supports basic weight readings.
-    
+
     Limitations:
     - No hardware/software version reading
     - No impedance measurements
-    
-    These will be implemented when the ESF-24 BLE protocol is analyzed.
     """
 
-    _state_mask: int = 0
+    def __init__(
+        self,
+        address: str,
+        notification_callback,
+        display_unit: WeightUnit = WeightUnit.KG,
+        scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
+        adapter: str | None = None,
+        bleak_scanner_backend=None,
+    ) -> None:
+        enforced_unit = WeightUnit(display_unit) if display_unit is not None else WeightUnit.KG
+        super().__init__(
+            address,
+            notification_callback,
+            enforced_unit,
+            scanning_mode,
+            adapter,
+            bleak_scanner_backend,
+        )
+        self._state_mask = 0
+
+    @EtekcitySmartFitnessScale.display_unit.setter
+    def display_unit(self, value):
+        if value is None:
+            raise ValueError("ESF-24 requires a non-null display unit")
+        self._display_unit = WeightUnit(value)
 
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
         """Handle post-connection setup and start notifications."""
+        self._state_mask = 0
         try:
-            # Start receiving weight notifications
+            _LOGGER.debug(
+                "ESF-24 starting session for device %s (%s)",
+                ble_device.name,
+                ble_device.address,
+            )
             await self._client.start_notify(
                 WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
                 lambda char, data: self._notification_handler(
@@ -101,7 +126,6 @@ class ESF24Scale(EtekcitySmartFitnessScale):
             _LOGGER.exception("%s(%s)", type(ex), ex.args)
             self._client = None
 
-
     def _notification_handler(
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
     ) -> None:
@@ -110,49 +134,55 @@ class ESF24Scale(EtekcitySmartFitnessScale):
             and payload[5] == 1
             and payload[0:3] == b"\x10\x0b\x15"
         ):
-            if not self._state_mask & 4:
-                self._state_mask |= 4
-                # LOG SENDING END MEASUREMENT COMMAND FOR DEBUGGING
-                asyncio.create_task(self._safe_write(CMD_END_MEASUREMENT))
-                data = parse_weight(payload)
+            _LOGGER.debug(
+                "ESF-24 stable weight received (%s). Scheduling measurement end command.",
+                address,
+            )
+            asyncio.create_task(self._safe_write(CMD_END_MEASUREMENT), name="esf24-end-measurement")
+            data = parse_weight(payload)
 
-                _LOGGER.debug(
-                    "Received stable weight notification from %s (%s): %s",
-                    name,
-                    address,
-                    data,
-                )
-                
-                scale_data = ScaleData()
-                scale_data.name = name
-                scale_data.address = address
-                scale_data.display_unit = self.display_unit
-                scale_data.measurements = data
-                
-                self._notification_callback(scale_data)
+            scale_data = ScaleData()
+            scale_data.name = name
+            scale_data.address = address
+            scale_data.display_unit = self.display_unit
+            scale_data.measurements = data
+            
+            self._notification_callback(scale_data)
         elif (
             len(payload) == 15
             and payload[0:3] == b"\x12\x0f\x15"
         ):
-            if not self._state_mask & 1:
-                self._state_mask |= 1
+            if not self._state_mask & _STATE_UNIT_SET:
+                self._state_mask |= _STATE_UNIT_SET
+                _LOGGER.debug(
+                    "ESF-24 unit negotiation frame received from %s. Scheduling update.",
+                    address,
+                )
                 cmd = build_unit_update_command(self.display_unit)
-                # LOG SENDING UNIT UPDATE COMMAND FOR DEBUGGING
-                asyncio.create_task(self._safe_write(cmd))
+                asyncio.create_task(self._safe_write(cmd), name="esf24-unit-update")
         elif (
             len(payload) == 11
             and payload[0:3] == b"\x14\x0b\x15"
         ):
-            if not self._state_mask & 2:
-                self._state_mask |= 2
+            if not self._state_mask & _STATE_MEASUREMENT_INIT:
+                self._state_mask |= _STATE_MEASUREMENT_INIT
+                _LOGGER.debug(
+                    "ESF-24 measurement initiation requested by %s. Sending timestamp.",
+                    address,
+                )
                 cmd = build_measurement_initiation_command()
-                # LOG SENDING MEASUREMENT INITIATION COMMAND FOR DEBUGGING
-                asyncio.create_task(self._safe_write(cmd))
+                asyncio.create_task(self._safe_write(cmd), name="esf24-measurement-init")
+        else:
+            _LOGGER.debug("ESF-24 ignoring unrecognized payload: %s", payload.hex())
 
     async def _safe_write(self, data: bytearray) -> None:
         """Write GATT char safely with error handling."""
+        if not self._client:
+            _LOGGER.warning("ESF-24 cannot send command; no active client")
+            return
         try:
             await self._client.write_gatt_char(ALIRO_CHARACTERISTIC_UUID, data)
+            _LOGGER.debug("ESF-24 command sent: %s", data.hex())
         except Exception as ex:
-            # LOG ERROR
-            pass
+            _LOGGER.error("ESF-24 failed to send command %s: %s", data.hex(), ex)
+            self._state_mask = 0

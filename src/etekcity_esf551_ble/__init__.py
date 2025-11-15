@@ -1,15 +1,17 @@
 from ._version import __version__, __version_info__
 from .esf551 import ESF551Scale, EtekcitySmartFitnessScaleWithBodyMetrics
 from .esf551.body_metrics import BodyMetrics, Sex
-from .esf551.const import (
+from .const import (
     ALIRO_CHARACTERISTIC_UUID,
     DISPLAY_UNIT_KEY,
-    HW_REVISION_STRING_CHARACTERISTIC_UUID,
     IMPEDANCE_KEY,
-    SW_REVISION_STRING_CHARACTERISTIC_UUID,
-    UNIT_UPDATE_COMMAND,
     WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
     WEIGHT_KEY,
+)
+from .esf551.const import (
+    HW_REVISION_STRING_CHARACTERISTIC_UUID,
+    SW_REVISION_STRING_CHARACTERISTIC_UUID,
+    UNIT_UPDATE_COMMAND,
 )
 from .esf24 import ESF24Scale
 from .parser import (

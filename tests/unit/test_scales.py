@@ -32,27 +32,25 @@ async def test_esf24_scale_initialization():
 
     assert scale.address == "00:11:22:33:44:55"
     assert scale._notification_callback == callback
-    # ESF24 always uses kg, no unit changes allowed
-    assert scale._display_unit == WeightUnit.KG
-    assert scale._unit_update_flag is False
     assert scale.display_unit == WeightUnit.KG
+    assert scale._state_mask == 0
 
 
 @pytest.mark.asyncio
-async def test_scale_notification_handler():
-    """Test scale notification handler."""
+async def test_esf551_scale_notification_handler():
+    """Test ESF-551 notification handler uses parser output."""
     callback = Mock()
-    scale = EtekcitySmartFitnessScale("00:11:22:33:44:55", callback)
+    scale = ESF551Scale("00:11:22:33:44:55", callback)
 
-    # Mock the abstract methods
-    scale._parse_payload = Mock(return_value={"weight": 70.5, "display_unit": 0})
-    scale._weight_characteristic_uuid = Mock(return_value="test-uuid")
+    test_payload = b"ignored"
+    with patch("src.etekcity_esf551_ble.esf551.parser.parse") as mock_parse:
+        mock_parse.return_value = {"weight": 70.5, "display_unit": 0}
+        scale._notification_handler("char", test_payload, "test_name", "test_address")
 
-    # Simulate receiving data
-    scale._notification_handler("char", b"test_data", "test_name", "test_address")
-
-    # Check that callback was called
     callback.assert_called_once()
+    call_args = callback.call_args[0][0]
+    assert call_args.measurements["weight"] == 70.5
+    assert call_args.display_unit == WeightUnit.KG
 
 
 @pytest.mark.asyncio
@@ -76,14 +74,14 @@ async def test_esf551_scale_set_display_unit():
 
 @pytest.mark.asyncio
 async def test_esf24_scale_set_display_unit():
-    """Test ESF-24 display unit setting (should be ignored)."""
+    """Test ESF-24 display unit enforcement."""
     scale = ESF24Scale("00:11:22:33:44:55", Mock())
 
-    # ESF24 ignores unit changes - always stays at kg
     scale.display_unit = WeightUnit.LB
-    assert scale._display_unit == WeightUnit.KG
-    assert scale.display_unit == WeightUnit.KG
-    assert scale._unit_update_flag is False
+    assert scale.display_unit == WeightUnit.LB
+
+    with pytest.raises(ValueError):
+        scale.display_unit = None
 
 
 @pytest.mark.asyncio

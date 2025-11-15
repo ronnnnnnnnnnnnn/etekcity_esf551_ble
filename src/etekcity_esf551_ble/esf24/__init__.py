@@ -1,6 +1,6 @@
 """ESF-24 scale implementation (experimental)."""
 
-from .const import (
+from ..const import (
     DISPLAY_UNIT_KEY,
     WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
     WEIGHT_KEY,

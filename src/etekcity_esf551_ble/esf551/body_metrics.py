@@ -6,7 +6,7 @@ from math import floor
 
 from bleak.backends.scanner import BaseBleakScanner
 
-from .const import IMPEDANCE_KEY, WEIGHT_KEY
+from ..const import IMPEDANCE_KEY, WEIGHT_KEY
 from ..parser import (
     BluetoothScanningMode,
     ScaleData,

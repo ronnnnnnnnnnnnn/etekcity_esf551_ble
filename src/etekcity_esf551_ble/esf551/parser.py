@@ -72,11 +72,8 @@ class ESF551Scale(EtekcitySmartFitnessScale):
     """ESF-551 scale implementation with full feature support."""
     _unit_update_flag: bool = False
 
-    @property
-    def display_unit(self):
-        return self._display_unit
 
-    @display_unit.setter
+    @EtekcitySmartFitnessScale.display_unit.setter
     def display_unit(self, value):
         if value is not None:
             self._display_unit = value
@@ -85,6 +82,11 @@ class ESF551Scale(EtekcitySmartFitnessScale):
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
         """Handle post-connection setup and start notifications."""
         try:
+            _LOGGER.debug(
+                "ESF-551 preparing session for device %s (%s)",
+                ble_device.name,
+                ble_device.address,
+            )
             # Perform model-specific setup (read versions, handle unit changes, etc.)
             await self._setup_after_connection()
 

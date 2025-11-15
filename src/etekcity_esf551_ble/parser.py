@@ -117,7 +117,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
     _client: BleakClient = None
     _hw_version: str = None
     _sw_version: str = None
-    _display_unit: WeightUnit = None
 
     def __init__(
         self,
@@ -171,8 +170,7 @@ class EtekcitySmartFitnessScale(abc.ABC):
             self._scanner = bleak_scanner_backend
             self._scanner.register_detection_callback(self._advertisement_callback)
         self._lock = asyncio.Lock()
-        if display_unit is not None:
-            self._display_unit = display_unit
+        self._display_unit = display_unit
 
     @property
     def hw_version(self) -> str:
@@ -208,6 +206,17 @@ class EtekcitySmartFitnessScale(abc.ABC):
         """
     
     
+
+    @abc.abstractmethod
+    async def _start_scale_session(self, ble_device: BLEDevice) -> None:
+        """
+        Complete model-specific setup after a connection is established.
+
+        Implementations should perform any characteristic reads and register
+        notification callbacks (typically via `self._client.start_notify`).
+        """
+        raise NotImplementedError
+
 
     async def async_start(self) -> None:
         """Start the callbacks."""
