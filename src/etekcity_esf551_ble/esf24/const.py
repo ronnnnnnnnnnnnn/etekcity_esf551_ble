@@ -1,6 +1,4 @@
 """Constants specific to the ESF-24 model (experimental)."""
 
-WEIGHT_CHARACTERISTIC_UUID_NOTIFY = "0000fff1-0000-1000-8000-00805f9b34fb" 
-
-DISPLAY_UNIT_KEY = "display_unit"
-WEIGHT_KEY = "weight"
+CMD_SET_DISPLAY_UNIT = bytearray.fromhex("1309150010283700a0")
+CMD_END_MEASUREMENT = bytearray.fromhex("1f05151049")

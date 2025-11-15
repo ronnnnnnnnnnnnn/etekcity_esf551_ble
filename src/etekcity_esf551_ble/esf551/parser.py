@@ -3,22 +3,19 @@
 import logging
 import struct
 
-from ..parser import EtekcitySmartFitnessScale, WeightUnit
+from bleak.backends.characteristic import BleakGATTCharacteristic
+from bleak.backends.device import BLEDevice
+
+from ..parser import EtekcitySmartFitnessScale, ScaleData, WeightUnit
+from ..const import ALIRO_CHARACTERISTIC_UUID, IMPEDANCE_KEY, WEIGHT_CHARACTERISTIC_UUID_NOTIFY, DISPLAY_UNIT_KEY, WEIGHT_KEY
 from .const import (
-    ALIRO_CHARACTERISTIC_UUID,
-    DISPLAY_UNIT_KEY,
     HW_REVISION_STRING_CHARACTERISTIC_UUID,
-    IMPEDANCE_KEY,
     SW_REVISION_STRING_CHARACTERISTIC_UUID,
     UNIT_UPDATE_COMMAND,
-    WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
-    WEIGHT_KEY,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-
-# === Parsing functions ===
 
 def parse(payload: bytearray) -> dict[str, int | float | None]:
     """
@@ -65,28 +62,77 @@ def build_unit_update_payload(desired_unit: int) -> bytearray:
     Returns:
         bytearray: The payload to send to the scale to update the display unit
     """
-    payload = bytearray.fromhex(UNIT_UPDATE_COMMAND)
+    payload = UNIT_UPDATE_COMMAND.copy()
     payload[5] = 43 - desired_unit
     payload[10] = desired_unit
     return payload
 
 
-# === Scale class ===
-
 class ESF551Scale(EtekcitySmartFitnessScale):
     """ESF-551 scale implementation with full feature support."""
+    _unit_update_flag: bool = False
 
-    # === REQUIRED: Core functionality ===
-    
-    def _weight_characteristic_uuid(self) -> str:
-        """Return the weight notification characteristic UUID for ESF-551."""
-        return WEIGHT_CHARACTERISTIC_UUID_NOTIFY
+    @property
+    def display_unit(self):
+        return self._display_unit
 
-    def _parse_payload(self, payload: bytearray) -> dict[str, int | float | None] | None:
-        """Parse raw payload data for ESF-551."""
-        return parse(payload)
+    @display_unit.setter
+    def display_unit(self, value):
+        if value is not None:
+            self._display_unit = value
+            self._unit_update_flag = True
 
-    # === OPTIONAL: Feature implementations ===
+    async def _start_scale_session(self, ble_device: BLEDevice) -> None:
+        """Handle post-connection setup and start notifications."""
+        try:
+            # Perform model-specific setup (read versions, handle unit changes, etc.)
+            await self._setup_after_connection()
+
+            # Start receiving weight notifications
+            await self._client.start_notify(
+                WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
+                lambda char, data: self._notification_handler(
+                    char, data, ble_device.name, ble_device.address
+                ),
+            )
+        except Exception as ex:  # pragma: no cover – log and reset on any failure
+            _LOGGER.exception("%s(%s)", type(ex), ex.args)
+            self._client = None
+            # Trigger a unit update attempt on next connection
+            self._unit_update_flag = True
+
+            
+    def _notification_handler(
+        self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
+    ) -> None:
+        if parsed_data := parse(payload):
+            _LOGGER.debug(
+                "Received stable weight notification from %s (%s): %s",
+                name,
+                address,
+                parsed_data,
+            )
+            
+            scale_data = ScaleData()
+            scale_data.name = name
+            scale_data.address = address
+            scale_data.hw_version = self.hw_version
+            scale_data.sw_version = self.sw_version
+            
+            # Extract and handle display unit
+            scale_data.display_unit = WeightUnit(parsed_data.pop(DISPLAY_UNIT_KEY))
+            
+            if self._display_unit is None:
+                self._display_unit = scale_data.display_unit
+                self._unit_update_flag = False
+            else:
+                self._unit_update_flag = scale_data.display_unit != self._display_unit
+            
+            # Remaining data goes to measurements
+            scale_data.measurements = parsed_data
+            
+            # Call user's callback
+            self._notification_callback(scale_data)
     
     async def _setup_after_connection(self) -> None:
         """

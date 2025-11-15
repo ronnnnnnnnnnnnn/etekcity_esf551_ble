@@ -20,7 +20,6 @@ from bleak.backends.scanner import (
 )
 from bleak_retry_connector import establish_connection
 
-from .esf551.const import DISPLAY_UNIT_KEY, IMPEDANCE_KEY, WEIGHT_KEY
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -119,7 +118,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
     _hw_version: str = None
     _sw_version: str = None
     _display_unit: WeightUnit = None
-    _unit_update_flag: bool = False
 
     def __init__(
         self,
@@ -174,7 +172,7 @@ class EtekcitySmartFitnessScale(abc.ABC):
             self._scanner.register_detection_callback(self._advertisement_callback)
         self._lock = asyncio.Lock()
         if display_unit is not None:
-            self.display_unit = display_unit
+            self._display_unit = display_unit
 
     @property
     def hw_version(self) -> str:
@@ -190,91 +188,26 @@ class EtekcitySmartFitnessScale(abc.ABC):
 
     @display_unit.setter
     def display_unit(self, value):
-        if value is not None:
-            self._display_unit = value
-            self._unit_update_flag = True
-
-    # === REQUIRED: Core functionality ===
-    
-    @abc.abstractmethod
-    def _weight_characteristic_uuid(self) -> str:
-        """
-        Return the UUID for weight notifications.
-        Required for all scales.
-        """
+        self._display_unit = value
 
     @abc.abstractmethod
-    def _parse_payload(self, payload: bytearray) -> dict[str, int | float | None] | None:
+    def _notification_handler(
+        self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
+    ) -> None:
         """
-        Parse weight notification payload.
-        Required for all scales.
-        
-        Returns:
-            dict with at least WEIGHT_KEY and DISPLAY_UNIT_KEY, or None if invalid.
-        """
+        Handle notifications received from the scale.
 
-    # === OPTIONAL: High-level feature hooks ===
-    
-    async def _setup_after_connection(self) -> None:
-        """
-        Called after BLE connection is established.
-        Override to perform model-specific setup.
-        
-        This is where you should:
-        - Read hardware/software versions
-        - Configure scale settings
-        - Handle display unit changes (if self._unit_update_flag is True)
-        - Any other model-specific initialization
-        
-        The base class provides:
-        - self._display_unit: The desired display unit (or None)
-        - self._unit_update_flag: True if a unit change was requested
-        
-        After handling a unit change, set self._unit_update_flag = False
-        
-        Default implementation does nothing.
-        """
-        pass
+        This method processes the raw data received from the scale's notification
+        characteristic and calls the notification callback with the parsed data.
 
-    def _build_scale_data(self, parsed_data: dict[str, int | float | None], name: str, address: str) -> ScaleData:
-        """
-        Build ScaleData from parsed payload data.
-        Override to customize how ScaleData is constructed.
-        
         Args:
-            parsed_data: Dictionary returned from _parse_payload()
-                         Must contain at least DISPLAY_UNIT_KEY and WEIGHT_KEY
+            _: The GATT characteristic that sent the notification (unused)
+            payload: Raw binary data received from the scale
             name: Device name of the scale
             address: Bluetooth address of the scale
-            
-        Returns:
-            ScaleData: Object containing scale information and measurements
-            
-        Default implementation:
-        - Extracts display_unit from parsed_data
-        - Updates internal display unit tracking
-        - Puts remaining data in measurements
-        - Adds hw_version and sw_version if available
         """
-        device = ScaleData()
-        device.name = name
-        device.address = address
-        device.hw_version = self.hw_version
-        device.sw_version = self.sw_version
-        
-        # Extract and handle display unit
-        device.display_unit = WeightUnit(parsed_data.pop(DISPLAY_UNIT_KEY))
-        
-        if self._display_unit is None:
-            self._display_unit = device.display_unit
-            self._unit_update_flag = False
-        else:
-            self._unit_update_flag = device.display_unit != self._display_unit
-        
-        # Remaining data goes to measurements
-        device.measurements = parsed_data
-        
-        return device
+    
+    
 
     async def async_start(self) -> None:
         """Start the callbacks."""
@@ -299,35 +232,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
         except Exception as ex:
             _LOGGER.error("Failed to stop scanner: %s", ex)
             raise
-
-    def _notification_handler(
-        self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
-    ) -> None:
-        """
-        Handle notifications received from the scale.
-
-        This method processes the raw data received from the scale's notification
-        characteristic and calls the notification callback with the parsed data.
-
-        Args:
-            _: The GATT characteristic that sent the notification (unused)
-            payload: Raw binary data received from the scale
-            name: Device name of the scale
-            address: Bluetooth address of the scale
-        """
-        if parsed_data := self._parse_payload(payload):
-            _LOGGER.debug(
-                "Received stable weight notification from %s (%s): %s",
-                name,
-                address,
-                parsed_data,
-            )
-            
-            # Build ScaleData (models can customize this)
-            scale_data = self._build_scale_data(parsed_data, name, address)
-            
-            # Call user's callback
-            self._notification_callback(scale_data)
 
     def _unavailable_callback(self, _: BleakClient) -> None:
         """
@@ -375,22 +279,4 @@ class EtekcitySmartFitnessScale(abc.ABC):
                 self._client = None
                 return
 
-        try:
-            # Perform model-specific setup (read versions, handle unit changes, etc.)
-            await self._setup_after_connection()
-            
-            # Start receiving weight notifications
-            await self._client.start_notify(
-                self._weight_characteristic_uuid(),
-                lambda char, data: self._notification_handler(
-                    char, data, ble_device.name, ble_device.address
-                ),
-            )
-        except Exception as ex:
-            _LOGGER.exception("%s(%s)", type(ex), ex.args)
-            self._client = None
-            self._unit_update_flag = True
-
-
-# Backward compatibility: Don't import here to avoid circular imports
-# The alias is defined in __init__.py instead
+        await self._start_scale_session(ble_device)
