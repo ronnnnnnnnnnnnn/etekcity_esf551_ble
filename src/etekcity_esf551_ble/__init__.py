@@ -1,5 +1,5 @@
 from ._version import __version__, __version_info__
-from .esf551 import ESF551Scale, EtekcitySmartFitnessScaleWithBodyMetrics
+from .esf551 import ESF551Scale, ESF551ScaleWithBodyMetrics
 from .esf551.body_metrics import BodyMetrics, Sex
 from .const import (
     DISPLAY_UNIT_KEY,
@@ -17,7 +17,7 @@ __all__ = [
     "EtekcitySmartFitnessScale",
     "ESF551Scale",
     "ESF24Scale",
-    "EtekcitySmartFitnessScaleWithBodyMetrics",
+    "ESF551ScaleWithBodyMetrics",
     "WeightUnit",
     "ScaleData",
     "IMPEDANCE_KEY",

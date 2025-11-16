@@ -5,7 +5,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 from src.etekcity_esf551_ble import (
-    EtekcitySmartFitnessScale,
     ESF24Scale,
     ESF551Scale,
     WeightUnit,
@@ -104,7 +103,4 @@ async def test_scale_direct_instantiation():
         esf24_scale = ESF24Scale("00:11:22:33:44:55", callback)
         assert isinstance(esf24_scale, ESF24Scale)
 
-        # Test backward compatibility alias
-        legacy_scale = EtekcitySmartFitnessScale("00:11:22:33:44:55", callback)
-        assert isinstance(legacy_scale, ESF551Scale)
 

@@ -106,14 +106,10 @@ For different scale models:
 from etekcity_esf551_ble import ESF551Scale
 scale = ESF551Scale(address, callback)
 
-# ESF-24 (experimental, weight-only)
+# ESF-24 (experimental)
 from etekcity_esf551_ble import ESF24Scale
 scale = ESF24Scale(address, callback)  # Always reports in kg
 
-# Backward compatibility (still works)
-from etekcity_esf551_ble import EtekcitySmartFitnessScale
-scale = EtekcitySmartFitnessScale(address, callback)  # Creates ESF-551 scale
-```
 For a real-life usage example of this library, check out the [Etekcity Fitness Scale BLE Integration for Home Assistant](https://github.com/ronnnnnnnnnnnnn/etekcity_fitness_scale_ble).
 
 
@@ -145,9 +141,9 @@ Experimental implementation for ESF-24 scales (weight-only).
 - `hw_version`: Get the hardware version of the scale (read-only).
 - `sw_version`: Get the software version of the scale (read-only).
 
-### `EtekcitySmartFitnessScaleWithBodyMetrics`
+### `ESF551ScaleWithBodyMetrics`
 
-An extended version of EtekcitySmartFitnessScale that automatically calculates body metrics.
+An extended version of ESF551Scale that automatically calculates body metrics.
 
 #### Methods:
 

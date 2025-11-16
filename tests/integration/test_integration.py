@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from src.etekcity_esf551_ble import ESF24Scale, ESF551Scale
-from src.etekcity_esf551_ble.esf551.body_metrics import EtekcitySmartFitnessScaleWithBodyMetrics, Sex
+from src.etekcity_esf551_ble.esf551.body_metrics import ESF551ScaleWithBodyMetrics, Sex
 
 
 def _mock_scanner():
@@ -76,7 +76,7 @@ async def test_body_metrics_integration():
         mock_scanner_class, _ = _mock_scanner()
         mock_get_scanner.return_value = mock_scanner_class
 
-        body_scale = EtekcitySmartFitnessScaleWithBodyMetrics(
+        body_scale = ESF551ScaleWithBodyMetrics(
             "00:11:22:33:44:55",
             callback,
             Sex.Male,

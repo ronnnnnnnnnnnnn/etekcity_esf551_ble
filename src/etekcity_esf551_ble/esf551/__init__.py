@@ -13,11 +13,11 @@ from .const import (
     UNIT_UPDATE_COMMAND,
 )
 from .parser import ESF551Scale
-from .body_metrics import EtekcitySmartFitnessScaleWithBodyMetrics
+from .body_metrics import ESF551ScaleWithBodyMetrics
 
 __all__ = [
     'ESF551Scale',
-    'EtekcitySmartFitnessScaleWithBodyMetrics',
+    'ESF551ScaleWithBodyMetrics',
     'ALIRO_CHARACTERISTIC_UUID',
     'DISPLAY_UNIT_KEY',
     'HW_REVISION_STRING_CHARACTERISTIC_UUID',

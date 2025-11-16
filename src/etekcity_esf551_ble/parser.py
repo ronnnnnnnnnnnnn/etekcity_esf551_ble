@@ -93,7 +93,7 @@ class ScaleData:
         measurements (dict): Dictionary containing measurement data:
             - "weight": Weight value in kilograms
             - "impedance": Bioelectrical impedance value (if available)
-            - Additional body metrics when used with EtekcitySmartFitnessScaleWithBodyMetrics
+            - Additional body metrics when used with ESF551ScaleWithBodyMetrics
     """
 
     name: str = ""

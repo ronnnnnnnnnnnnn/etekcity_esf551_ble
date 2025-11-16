@@ -342,11 +342,11 @@ def _as_dictionary(obj: BodyMetrics) -> dict[str, int | float]:
     return {prop: getattr(obj, prop) for prop in dir(obj) if not prop.startswith("__")}
 
 
-class EtekcitySmartFitnessScaleWithBodyMetrics(ESF551Scale):
+class ESF551ScaleWithBodyMetrics(ESF551Scale):
     """
-    Extended Etekcity Smart Fitness Scale interface with body metrics calculations.
+    Extended ESF-551 scale implementation with body metrics calculations.
 
-    This class extends the ESF-551 scale interface to automatically calculate
+    This class extends the ESF-551 scale implementation to automatically calculate
     body composition metrics based on the user's profile (sex, age, height)
     and the measurements from the scale (weight, impedance).
 
