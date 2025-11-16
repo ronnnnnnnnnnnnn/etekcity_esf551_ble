@@ -60,10 +60,6 @@ if IS_LINUX:
             ]
         )
 
-if IS_MACOS:
-    from bleak.backends.corebluetooth.scanner import CBScannerArgs
-
-
 class BluetoothScanningMode(StrEnum):
     PASSIVE = "passive"
     ACTIVE = "active"
@@ -73,12 +69,6 @@ SCANNING_MODE_TO_BLEAK: dict[BluetoothScanningMode, str] = {
     BluetoothScanningMode.ACTIVE: "active",
     BluetoothScanningMode.PASSIVE: "passive",
 }
-
-
-class ConnectionStatus(IntEnum):
-    DISCONNECTED = 0
-    CONNECTING = 1
-    CONNECTED = 2
 
 
 class WeightUnit(IntEnum):

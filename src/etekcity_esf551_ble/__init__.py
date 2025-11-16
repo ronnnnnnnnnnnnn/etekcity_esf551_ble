@@ -16,7 +16,6 @@ from .esf551.const import (
 from .esf24 import ESF24Scale
 from .parser import (
     BluetoothScanningMode,
-    ConnectionStatus,
     ScaleData,
     WeightUnit,
 )
@@ -35,7 +34,6 @@ __all__ = [
     "WEIGHT_KEY",
     "BodyMetrics",
     "Sex",
-    "ConnectionStatus",
     "BluetoothScanningMode",
     # Backward compatibility - ESF-551 constants
     "ALIRO_CHARACTERISTIC_UUID",
