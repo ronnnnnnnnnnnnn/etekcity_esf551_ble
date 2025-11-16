@@ -52,6 +52,7 @@ path = "src/etekcity_esf551_ble/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/etekcity_esf551_ble"]
+universal2 = true
 
 [tool.hatch.build.targets.sdist]
 include = [

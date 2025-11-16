@@ -157,11 +157,11 @@ class EtekcitySmartFitnessScale(abc.ABC):
         _LOGGER.info(f"Initializing EtekcitySmartFitnessScale for address: {address}")
 
         self.address = address
-        # Per-instance attributes
         self._client: BleakClient | None = None
         self._hw_version: str | None = None
         self._sw_version: str | None = None
         self._initializing: bool = False
+        self._display_unit: WeightUnit | None = None
         self._notification_callback = notification_callback
 
         if bleak_scanner_backend is None:
