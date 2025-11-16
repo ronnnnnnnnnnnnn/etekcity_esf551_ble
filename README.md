@@ -108,7 +108,7 @@ scale = ESF551Scale(address, callback)
 
 # ESF-24 (experimental)
 from etekcity_esf551_ble import ESF24Scale
-scale = ESF24Scale(address, callback)  # Always reports in kg
+scale = ESF24Scale(address, callback)
 ```
 
 For a real-life usage example of this library, check out the [Etekcity Fitness Scale BLE Integration for Home Assistant](https://github.com/ronnnnnnnnnnnnn/etekcity_fitness_scale_ble).
