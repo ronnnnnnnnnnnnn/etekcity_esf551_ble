@@ -9,11 +9,14 @@ from .const import (
 from .esf24 import ESF24Scale
 from .parser import (
     BluetoothScanningMode,
+    EtekcitySmartFitnessScale,
     ScaleData,
     WeightUnit,
 )
 
 __all__ = [
+    "__version__",
+    "__version_info__",
     "EtekcitySmartFitnessScale",
     "ESF551Scale",
     "ESF24Scale",

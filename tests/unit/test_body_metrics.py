@@ -1,7 +1,5 @@
 """Unit tests for body metrics calculations."""
 
-from datetime import date
-
 from src.etekcity_esf551_ble.esf551.body_metrics import BodyMetrics, Sex
 
 
