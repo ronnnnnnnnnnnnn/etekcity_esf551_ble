@@ -1,14 +1,14 @@
 # Etekcity ESF-551 & ESF-24 BLE
 
-This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports both the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551) and [Etekcity ESF-24](https://etekcity.com/products/esf24-smart-fitness-scale) models.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports both the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551) and [Etekcity ESF-24](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf24) models.
 
 ## Features
 
-- **ESF-551**: Full feature support including weight, impedance, body metrics, and display unit management
-- **ESF-24**: Experimental weight-only support (kilograms only, protocol under analysis)
+- **ESF-551**: Full feature support including weight, impedance, body metrics and display unit management
+- **ESF-24**: Experimental support
 - Easy connection and notification handling
 - Body metrics calculations (ESF-551 only)
-- Display unit management (ESF-551 only)
+- Display unit management
 
 ## Supported Models
 
