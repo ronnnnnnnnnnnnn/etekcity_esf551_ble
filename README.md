@@ -15,13 +15,14 @@ This package provides a basic unofficial interface for interacting with Etekcity
 | Model | Status | Features |
 |-------|--------|----------|
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
-| ESF-24 | 🔬 Experimental | Weight only (kg), limited protocol analysis |
+| ESF-24 | 🔬 Experimental | Weight, impedance, unit changes |
 
 ## Version Status
 
-**v0.4.0-beta.1** (Pre-Release):
+**v0.4.0-beta.3** (Pre-Release):
 - ✅ ESF-551: Fully supported and stable
 - 🔬 ESF-24: Experimental support (protocol analysis ongoing)
+- ♻️ Internal: passive-scan optimisation & universal2 wheel build
 - ⚠️ Breaking changes from v0.3.x (architecture refactoring)
 
 **Note**: This is a pre-release version. PyPI will not automatically suggest upgrades from stable versions (v0.3.x) to this beta version.
