@@ -5,6 +5,8 @@ import asyncio
 import dataclasses
 import logging
 import platform
+import re
+import subprocess
 from collections.abc import Callable
 from enum import IntEnum, StrEnum
 from typing import Any
@@ -32,16 +34,31 @@ if IS_LINUX:
     from bleak.backends.bluezdbus.advertisement_monitor import OrPattern
     from bleak.backends.bluezdbus.scanner import BlueZScannerArgs
 
-    # or_patterns is a workaround for the fact that passive scanning
-    # needs at least one matcher to be set. The below matcher
-    # will match all devices.
-    PASSIVE_SCANNER_ARGS = BlueZScannerArgs(
-        or_patterns=[
-            OrPattern(0, AdvertisementDataType.FLAGS, b"\x02"),
-            OrPattern(0, AdvertisementDataType.FLAGS, b"\x06"),
-            OrPattern(0, AdvertisementDataType.FLAGS, b"\x1a"),
-        ]
-    )
+    def _detect_bluez_version() -> tuple[int, int] | None:  # pragma: no cover – env-specific
+        """Return the system BlueZ version as a tuple (major, minor)."""
+        try:
+            out = subprocess.check_output(['bluetoothd', '-v'], text=True, timeout=1).strip()
+            # Expected format: '5.68'
+            if match := re.match(r"(\d+)\.(\d+)", out):
+                return int(match.group(1)), int(match.group(2))
+        except Exception:
+            pass
+        return None
+
+    _BLUETOOTH_VERSION = _detect_bluez_version()
+
+    if _BLUETOOTH_VERSION and _BLUETOOTH_VERSION >= (5, 68):
+        # BlueZ >= 5.68 allows empty matcher list for passive scans
+        PASSIVE_SCANNER_ARGS: BlueZScannerArgs | None = None
+    else:
+        # Fallback matcher that matches anything (BlueZ < 5.68 requirement)
+        PASSIVE_SCANNER_ARGS = BlueZScannerArgs(
+            or_patterns=[
+                OrPattern(0, AdvertisementDataType.FLAGS, b"\x02"),
+                OrPattern(0, AdvertisementDataType.FLAGS, b"\x06"),
+                OrPattern(0, AdvertisementDataType.FLAGS, b"\x1a"),
+            ]
+        )
 
 if IS_MACOS:
     from bleak.backends.corebluetooth.scanner import CBScannerArgs
@@ -114,9 +131,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
         display_unit: The current display unit of the scale (KG, LB, or ST)
     """
 
-    _client: BleakClient = None
-    _hw_version: str = None
-    _sw_version: str = None
 
     def __init__(
         self,
@@ -143,6 +157,11 @@ class EtekcitySmartFitnessScale(abc.ABC):
         _LOGGER.info(f"Initializing EtekcitySmartFitnessScale for address: {address}")
 
         self.address = address
+        # Per-instance attributes
+        self._client: BleakClient | None = None
+        self._hw_version: str | None = None
+        self._sw_version: str | None = None
+        self._initializing: bool = False
         self._notification_callback = notification_callback
 
         if bleak_scanner_backend is None:
@@ -158,7 +177,7 @@ class EtekcitySmartFitnessScale(abc.ABC):
                 # Only Linux supports multiple adapters
                 if adapter:
                     scanner_kwargs["adapter"] = adapter
-                if scanning_mode == BluetoothScanningMode.PASSIVE:
+                if scanning_mode == BluetoothScanningMode.PASSIVE and PASSIVE_SCANNER_ARGS:
                     scanner_kwargs["bluez"] = PASSIVE_SCANNER_ARGS
             elif IS_MACOS:
                 # We want mac address on macOS
@@ -170,7 +189,7 @@ class EtekcitySmartFitnessScale(abc.ABC):
             self._scanner = bleak_scanner_backend
             self._scanner.register_detection_callback(self._advertisement_callback)
         self._lock = asyncio.Lock()
-        self._display_unit = display_unit
+        self.display_unit = display_unit
 
     @property
     def hw_version(self) -> str:
@@ -273,8 +292,12 @@ class EtekcitySmartFitnessScale(abc.ABC):
             return
 
         async with self._lock:
-            if self._client is not None:
+            if self._client is not None or self._initializing:
                 return
+
+            self._initializing = True
+
+        try:
             try:
                 self._client = await establish_connection(
                     BleakClient,
@@ -288,4 +311,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
                 self._client = None
                 return
 
-        await self._start_scale_session(ble_device)
+            await self._start_scale_session(ble_device)
+        finally:
+            self._initializing = False
