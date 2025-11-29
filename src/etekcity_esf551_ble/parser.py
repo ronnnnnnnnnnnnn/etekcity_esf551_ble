@@ -336,6 +336,7 @@ class EtekcitySmartFitnessScale:
             if self._client != None:
                 return
             try:
+                _LOGGER.debug("Connecting to scale: %s", self.address)
                 self._client = await establish_connection(
                     BleakClient,
                     ble_device,
