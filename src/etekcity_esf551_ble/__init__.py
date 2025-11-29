@@ -10,6 +10,8 @@ from .parser import (
 )
 
 __all__ = [
+    "__version__",
+    "__version_info__",
     "EtekcitySmartFitnessScale",
     "EtekcitySmartFitnessScaleWithBodyMetrics",
     "WeightUnit",

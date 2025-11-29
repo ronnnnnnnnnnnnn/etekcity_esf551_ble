@@ -401,13 +401,16 @@ class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
     def _wrapped_notification_callback(
         self, sex: Sex, birthdate: date, height_m: float, data: ScaleData
     ) -> None:
-        data.measurements |= _as_dictionary(
-            BodyMetrics(
-                data.measurements[WEIGHT_KEY],
-                height_m,
-                _calc_age(birthdate),
-                sex,
-                data.measurements[IMPEDANCE_KEY],
-            )
+        # Only calculate body metrics if impedance is present
+        body_metrics = BodyMetrics(
+            data.measurements[WEIGHT_KEY],
+            height_m,
+            _calc_age(birthdate),
+            sex,
+            data.measurements.get(IMPEDANCE_KEY),
         )
+        if IMPEDANCE_KEY in data.measurements:
+            data.measurements |= _as_dictionary(body_metrics)
+        else:
+            data.measurements["body_mass_index"] = body_metrics.body_mass_index
         self._original_callback(data)
