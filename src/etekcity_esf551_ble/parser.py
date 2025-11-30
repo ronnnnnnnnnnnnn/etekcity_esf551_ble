@@ -54,7 +54,7 @@ if IS_LINUX:
     )
 
 if IS_MACOS:
-    from bleak.backends.corebluetooth.scanner import CBScannerArgs
+    pass
 
 
 class BluetoothScanningMode(StrEnum):
@@ -218,7 +218,7 @@ class EtekcitySmartFitnessScale:
             self._scanner.register_detection_callback(self._advertisement_callback)
         self._lock = asyncio.Lock()
         self._unit_update_buff = bytearray.fromhex(UNIT_UPDATE_COMMAND)
-        if display_unit != None:
+        if display_unit is not None:
             self.display_unit = display_unit
 
     @property
@@ -235,7 +235,7 @@ class EtekcitySmartFitnessScale:
 
     @display_unit.setter
     def display_unit(self, value):
-        if value != None:
+        if value is not None:
             self._display_unit = value
             self._unit_update_flag = True
 
@@ -293,7 +293,7 @@ class EtekcitySmartFitnessScale:
             _LOGGER.debug("%s (%s): %s", name, address, data)
             device.display_unit = WeightUnit(data.pop(DISPLAY_UNIT_KEY))
 
-            if self._display_unit == None:
+            if self._display_unit is None:
                 self._display_unit = device.display_unit
                 self._unit_update_flag = False
             else:
@@ -307,13 +307,24 @@ class EtekcitySmartFitnessScale:
         Handle disconnection events from the scale.
 
         This method is called when the scale disconnects, either intentionally
-        or due to connection loss.
+        or due to connection loss. Restarts the scanner to listen for next measurement.
 
         Args:
             _: The BleakClient instance that disconnected (unused)
         """
         self._client = None
         _LOGGER.debug("Scale disconnected")
+
+        asyncio.create_task(self._restart_scanner_after_disconnect())
+
+    async def _restart_scanner_after_disconnect(self) -> None:
+        """Restart scanner after disconnection to listen for next measurement."""
+        try:
+            _LOGGER.debug("Restarting scanner (scale disconnected)")
+            await self._scanner.start()
+            _LOGGER.debug("Scanner restarted successfully")
+        except Exception as ex:
+            _LOGGER.error("Failed to restart scanner after disconnect: %s", ex)
 
     async def _advertisement_callback(
         self, ble_device: BLEDevice, _: AdvertisementData
@@ -331,10 +342,17 @@ class EtekcitySmartFitnessScale:
         """
         if ble_device.address != self.address:
             return
-        
+
         async with self._lock:
-            if self._client != None:
+            if self._client is not None:
                 return
+
+            try:
+                _LOGGER.debug("Stopping scanner (scale detected, about to connect)")
+                await self._scanner.stop()
+            except Exception as ex:
+                _LOGGER.warning("Failed to stop scanner: %s", ex)
+
             try:
                 _LOGGER.debug("Connecting to scale: %s", self.address)
                 self._client = await establish_connection(
@@ -347,11 +365,17 @@ class EtekcitySmartFitnessScale:
             except Exception as ex:
                 _LOGGER.exception("Could not connect to scale: %s(%s)", type(ex), ex.args)
                 self._client = None
+
+                try:
+                    _LOGGER.debug("Restarting scanner (connection failed)")
+                    await self._scanner.start()
+                except Exception as ex2:
+                    _LOGGER.error("Failed to restart scanner: %s", ex2)
                 return
 
         try:
             if self._unit_update_flag:
-                if self._display_unit != None:
+                if self._display_unit is not None:
                     self._unit_update_buff[5] = 43 - self._display_unit
                     self._unit_update_buff[10] = self._display_unit
                     await self._client.write_gatt_char(
