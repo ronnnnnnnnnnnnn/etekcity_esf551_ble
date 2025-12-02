@@ -5,6 +5,7 @@ import dataclasses
 import logging
 import platform
 import struct
+import time
 from collections.abc import Callable
 from enum import IntEnum, StrEnum
 from typing import Any
@@ -164,6 +165,7 @@ class EtekcitySmartFitnessScale:
     _sw_version: str = None
     _display_unit: WeightUnit = None
     _unit_update_flag: bool = False
+    _last_disconnect_time: float = 0.0
 
     def __init__(
         self,
@@ -194,7 +196,7 @@ class EtekcitySmartFitnessScale:
 
         if bleak_scanner_backend is None:
             scanner_kwargs: dict[str, Any] = {
-                "detection_callback": self._advertisement_callback,
+                "detection_callback": self._ad_callback_wrapper,
                 "service_uuids": None,
                 "scanning_mode": SCANNING_MODE_TO_BLEAK[scanning_mode],
                 "bluez": {},
@@ -215,7 +217,7 @@ class EtekcitySmartFitnessScale:
             self._scanner = PlatformBleakScanner(**scanner_kwargs)
         else:
             self._scanner = bleak_scanner_backend
-            self._scanner.register_detection_callback(self._advertisement_callback)
+            self._scanner.register_detection_callback(self._ad_callback_wrapper)
         self._lock = asyncio.Lock()
         self._unit_update_buff = bytearray.fromhex(UNIT_UPDATE_COMMAND)
         if display_unit is not None:
@@ -307,27 +309,39 @@ class EtekcitySmartFitnessScale:
         Handle disconnection events from the scale.
 
         This method is called when the scale disconnects, either intentionally
-        or due to connection loss. Restarts the scanner to listen for next measurement.
+        or due to connection loss. Records the disconnect time to filter stale
+        advertisement callbacks.
 
         Args:
             _: The BleakClient instance that disconnected (unused)
         """
         self._client = None
+        self._last_disconnect_time = time.time()
         _LOGGER.debug("Scale disconnected")
 
-        asyncio.create_task(self._restart_scanner_after_disconnect())
+    def _ad_callback_wrapper(
+        self, ble_device: BLEDevice, ad_data: AdvertisementData
+    ) -> None:
+        """
+        Wrapper for advertisement callbacks that timestamps when ad was received.
 
-    async def _restart_scanner_after_disconnect(self) -> None:
-        """Restart scanner after disconnection to listen for next measurement."""
-        try:
-            _LOGGER.debug("Restarting scanner (scale disconnected)")
-            await self._scanner.start()
-            _LOGGER.debug("Scanner restarted successfully")
-        except Exception as ex:
-            _LOGGER.error("Failed to restart scanner after disconnect: %s", ex)
+        This allows us to filter stale advertisements that were queued before
+        the scale disconnected.
+
+        Args:
+            ble_device: The detected Bluetooth device
+            ad_data: Advertisement data
+        """
+        # Capture the time when this advertisement was received
+        ad_received_time = time.time()
+
+        # Create async task with timestamp
+        asyncio.create_task(
+            self._advertisement_callback(ble_device, ad_data, ad_received_time)
+        )
 
     async def _advertisement_callback(
-        self, ble_device: BLEDevice, _: AdvertisementData
+        self, ble_device: BLEDevice, _: AdvertisementData, ad_received_time: float
     ) -> None:
         """
         Handle Bluetooth advertisements from the scale.
@@ -339,19 +353,25 @@ class EtekcitySmartFitnessScale:
         Args:
             ble_device: The detected Bluetooth device
             _: Advertisement data (unused)
+            ad_received_time: Timestamp when advertisement was received
         """
         if ble_device.address != self.address:
+            return
+
+        # Check if this advertisement is stale (received before last disconnect)
+        if (
+            self._last_disconnect_time > 0
+            and ad_received_time < self._last_disconnect_time
+        ):
+            _LOGGER.debug(
+                "Ignoring stale advertisement received %.2f seconds before disconnect",
+                self._last_disconnect_time - ad_received_time,
+            )
             return
 
         async with self._lock:
             if self._client is not None:
                 return
-
-            try:
-                _LOGGER.debug("Stopping scanner (scale detected, about to connect)")
-                await self._scanner.stop()
-            except Exception as ex:
-                _LOGGER.warning("Failed to stop scanner: %s", ex)
 
             try:
                 _LOGGER.debug("Connecting to scale: %s", self.address)
@@ -365,12 +385,6 @@ class EtekcitySmartFitnessScale:
             except Exception as ex:
                 _LOGGER.exception("Could not connect to scale: %s(%s)", type(ex), ex.args)
                 self._client = None
-
-                try:
-                    _LOGGER.debug("Restarting scanner (connection failed)")
-                    await self._scanner.start()
-                except Exception as ex2:
-                    _LOGGER.error("Failed to restart scanner: %s", ex2)
                 return
 
         try:
