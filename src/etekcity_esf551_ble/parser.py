@@ -323,7 +323,7 @@ class EtekcitySmartFitnessScale:
 
     async def _async_unavailable_callback(self) -> None:
        self._client = None
-       if not self._scanner_running:
+       if self._scanner_running:
             _LOGGER.warning("Scanner already running, skipping start")
             return
 
