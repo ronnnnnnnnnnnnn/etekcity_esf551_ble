@@ -319,6 +319,7 @@ class EtekcitySmartFitnessScale:
         Args:
             _: The BleakClient instance that disconnected (unused)
         """
+        _LOGGER.debug("Scale disconnected")
         asyncio.create_task(self._async_unavailable_callback())
 
     async def _async_unavailable_callback(self) -> None:
