@@ -161,6 +161,7 @@ class EtekcitySmartFitnessScale:
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         """
         Initialize the scale interface.
@@ -174,8 +175,11 @@ class EtekcitySmartFitnessScale:
             scanning_mode: Mode for BLE scanning (ACTIVE or PASSIVE)
             adapter: Bluetooth adapter to use (Linux only)
             bleak_scanner_backend: Optional custom BLE scanner backend
+            logger: Optional logger instance. If not provided, uses the library's
+                    internal logger.
         """
-        _LOGGER.info(f"Initializing EtekcitySmartFitnessScale for address: {address}")
+        self._logger = logger or _LOGGER
+        self._logger.info(f"Initializing EtekcitySmartFitnessScale for address: {address}")
 
         self.address = address
         self._notification_callback = notification_callback
@@ -236,11 +240,11 @@ class EtekcitySmartFitnessScale:
 
     async def async_start(self) -> None:
         """Start the callbacks."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Starting EtekcitySmartFitnessScale for address: %s", self.address
         )
         if self._scanner_running:
-            _LOGGER.warning("Scanner already running, skipping start")
+            self._logger.warning("Scanner already running, skipping start")
             return
 
         async with self._lock:
@@ -248,17 +252,17 @@ class EtekcitySmartFitnessScale:
                 await self._scanner.start()
                 self._scanner_running = True
             except Exception as ex:
-                _LOGGER.error("Failed to start scanner: %s", ex)
+                self._logger.error("Failed to start scanner: %s", ex)
                 self._scanner_running = False
                 raise
 
     async def async_stop(self) -> None:
         """Stop the callbacks."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Stopping EtekcitySmartFitnessScale for address: %s", self.address
         )
         if not self._scanner_running:
-            _LOGGER.warning("Scanner not running, skipping stop")
+            self._logger.warning("Scanner not running, skipping stop")
             return
 
         async with self._lock:
@@ -266,7 +270,7 @@ class EtekcitySmartFitnessScale:
                 await self._scanner.stop()
                 self._scanner_running = False
             except Exception as ex:
-                _LOGGER.error("Failed to stop scanner: %s", ex)
+                self._logger.error("Failed to stop scanner: %s", ex)
                 self._scanner_running = True
                 raise
 
@@ -286,7 +290,7 @@ class EtekcitySmartFitnessScale:
             address: Bluetooth address of the scale
         """
         if data := parse(payload):
-            _LOGGER.debug(
+            self._logger.debug(
                 "Received stable weight notification from %s (%s): %s",
                 name,
                 address,
@@ -297,7 +301,7 @@ class EtekcitySmartFitnessScale:
             device.address = address
             device.hw_version = self.hw_version
             device.sw_version = self.sw_version
-            _LOGGER.debug("%s (%s): %s", name, address, data)
+            self._logger.debug("%s (%s): %s", name, address, data)
             device.display_unit = WeightUnit(data.pop(DISPLAY_UNIT_KEY))
 
             if self._display_unit is None:
@@ -319,13 +323,13 @@ class EtekcitySmartFitnessScale:
         Args:
             _: The BleakClient instance that disconnected (unused)
         """
-        _LOGGER.debug("Scale disconnected")
+        self._logger.debug("Scale disconnected")
         asyncio.create_task(self._async_unavailable_callback())
 
     async def _async_unavailable_callback(self) -> None:
        self._client = None
        if self._scanner_running:
-            _LOGGER.warning("Scanner already running, skipping start")
+            self._logger.warning("Scanner already running, skipping start")
             return
 
        async with self._lock:
@@ -333,7 +337,7 @@ class EtekcitySmartFitnessScale:
                 await self._scanner.start()
                 self._scanner_running = True
             except Exception as ex:
-                _LOGGER.error("Failed to restart scanner after disconnect: %s", ex)
+                self._logger.error("Failed to restart scanner after disconnect: %s", ex)
                 self._scanner_running = False
                 raise
 
@@ -360,33 +364,33 @@ class EtekcitySmartFitnessScale:
 
             if self._scanner_running:   
                 try:
-                    _LOGGER.debug("Stopping scanner (scale detected, about to connect)")
+                    self._logger.debug("Stopping scanner (scale detected, about to connect)")
                     await self._scanner.stop()
                     self._scanner_running = False
                 except Exception as ex:
-                    _LOGGER.warning("Failed to stop scanner: %s", ex)
+                    self._logger.warning("Failed to stop scanner: %s", ex)
                     self._scanner_running = True
 
             try:
-                _LOGGER.debug("Connecting to scale: %s", self.address)
+                self._logger.debug("Connecting to scale: %s", self.address)
                 self._client = await establish_connection(
                     BleakClient,
                     ble_device,
                     self.address,
                     self._unavailable_callback,
                 )
-                _LOGGER.debug("Connected to scale: %s", self.address)
+                self._logger.debug("Connected to scale: %s", self.address)
             except Exception as ex:
-                _LOGGER.exception("Could not connect to scale: %s(%s)", type(ex), ex.args)
+                self._logger.exception("Could not connect to scale: %s(%s)", type(ex), ex.args)
                 self._client = None
 
                 if not self._scanner_running:
                     try:
-                        _LOGGER.debug("Restarting scanner (connection failed)")
+                        self._logger.debug("Restarting scanner (connection failed)")
                         await self._scanner.start()
                         self._scanner_running = True
                     except Exception as ex2:
-                        _LOGGER.error("Failed to restart scanner: %s", ex2)
+                        self._logger.error("Failed to restart scanner: %s", ex2)
                         self._scanner_running = False
                 
                 return
@@ -399,7 +403,7 @@ class EtekcitySmartFitnessScale:
                     await self._client.write_gatt_char(
                         ALIRO_CHARACTERISTIC_UUID, self._unit_update_buff, False
                     )
-                    _LOGGER.debug(
+                    self._logger.debug(
                         "Trying to update display unit to %s (buffer: %s)",
                         self._display_unit,
                         self._unit_update_buff.hex(),
@@ -421,9 +425,9 @@ class EtekcitySmartFitnessScale:
                     SW_REVISION_STRING_CHARACTERISTIC_UUID
                 )
             ).decode()
-            _LOGGER.debug("Scale HW version: %s", self._hw_version)
-            _LOGGER.debug("Scale SW version: %s", self._sw_version)
+            self._logger.debug("Scale HW version: %s", self._hw_version)
+            self._logger.debug("Scale SW version: %s", self._sw_version)
         except Exception as ex:
-            _LOGGER.exception("%s(%s)", type(ex), ex.args)
+            self._logger.exception("%s(%s)", type(ex), ex.args)
             self._client = None
             self._unit_update_flag = True
