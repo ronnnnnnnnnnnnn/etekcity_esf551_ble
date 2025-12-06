@@ -188,7 +188,7 @@ class EtekcitySmartFitnessScale:
             scanner_kwargs: dict[str, Any] = {
                 "detection_callback": self._advertisement_callback,
                 "service_uuids": None,
-                "scanning_mode": SCANNING_MODE_TO_BLEAK[scanning_mode],
+                "scanning_mode": BluetoothScanningMode.ACTIVE,
                 "bluez": {},
                 "cb": {},
             }
@@ -199,6 +199,7 @@ class EtekcitySmartFitnessScale:
                     scanner_kwargs["adapter"] = adapter
                 if scanning_mode == BluetoothScanningMode.PASSIVE:
                     scanner_kwargs["bluez"] = PASSIVE_SCANNER_ARGS
+                    scanner_kwargs["scanning_mode"] = BluetoothScanningMode.PASSIVE
             elif IS_MACOS:
                 # We want mac address on macOS
                 scanner_kwargs["cb"] = {"use_bdaddr": True}
