@@ -398,11 +398,11 @@ class EtekcitySmartFitnessScale:
         try:
             if self._unit_update_flag:
                 if self._display_unit is not None:
-                    if self._client.services.get_characteristic(ALIRO_CHARACTERISTIC_UUID):
+                    if unit_char := self._client.services.get_characteristic(ALIRO_CHARACTERISTIC_UUID):
                         self._unit_update_buff[5] = 43 - self._display_unit
                         self._unit_update_buff[10] = self._display_unit
                         await self._client.write_gatt_char(
-                            ALIRO_CHARACTERISTIC_UUID, self._unit_update_buff, False
+                            unit_char, self._unit_update_buff, False
                         )
                         self._logger.debug(
                             "Trying to update display unit to %s (buffer: %s)",
@@ -414,29 +414,32 @@ class EtekcitySmartFitnessScale:
                             "Unit update characteristic not found, skipping unit update"
                         )
 
-            await self._client.start_notify(
-                WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
-                lambda char, data: self._notification_handler(
-                    char, data, ble_device.name, ble_device.address
-                ),
-            )
+            if weight_char := self._client.services.get_characteristic(WEIGHT_CHARACTERISTIC_UUID_NOTIFY):
+                await self._client.start_notify(
+                    weight_char,
+                    lambda char, data: self._notification_handler(
+                        char, data, ble_device.name, ble_device.address
+                    ),
+                )
+            else:
+                self._logger.error("Weight notification characteristic not found")
+                # If we can't get weight notifications, the connection is useless.
+                # Disconnect and let the scanner find it again later.
+                await self._client.disconnect()
+                return
             
             if not self._hw_version:
-                if self._client.services.get_characteristic(HW_REVISION_STRING_CHARACTERISTIC_UUID):
+                if hw_char := self._client.services.get_characteristic(HW_REVISION_STRING_CHARACTERISTIC_UUID):
                     self._hw_version = (
-                        await self._client.read_gatt_char(
-                            HW_REVISION_STRING_CHARACTERISTIC_UUID
-                        )
+                        await self._client.read_gatt_char(hw_char)
                     ).decode()
                     self._logger.debug("Scale HW version: %s", self._hw_version)
                 else:
                      self._logger.debug("HW version characteristic not found")
 
-            if self._client.services.get_characteristic(SW_REVISION_STRING_CHARACTERISTIC_UUID):
+            if sw_char := self._client.services.get_characteristic(SW_REVISION_STRING_CHARACTERISTIC_UUID):
                 self._sw_version = (
-                    await self._client.read_gatt_char(
-                        SW_REVISION_STRING_CHARACTERISTIC_UUID
-                    )
+                    await self._client.read_gatt_char(sw_char)
                 ).decode()
                 self._logger.debug("Scale SW version: %s", self._sw_version)
             else:
