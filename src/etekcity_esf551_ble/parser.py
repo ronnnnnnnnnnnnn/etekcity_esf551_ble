@@ -314,7 +314,7 @@ class EtekcitySmartFitnessScale:
             device.measurements = data
             self._notification_callback(device)
 
-    def _unavailable_callback(self, _: BleakClient) -> None:
+    def _unavailable_callback(self, client: BleakClient) -> None:
         """
         Handle disconnection events from the scale.
 
@@ -322,8 +322,13 @@ class EtekcitySmartFitnessScale:
         or due to connection loss. Restarts the scanner to listen for next measurement.
 
         Args:
-            _: The BleakClient instance that disconnected (unused)
+            client: The BleakClient instance that disconnected
         """
+        # Ignore disconnect callbacks if client is already None or different from current
+        if not client or self._client != client:
+            self._logger.debug("Ignoring disconnect callback for stale client")
+            return
+
         self._logger.debug("Scale disconnected")
         asyncio.create_task(self._async_unavailable_callback())
 
@@ -397,6 +402,11 @@ class EtekcitySmartFitnessScale:
                 return
 
         try:
+            # Ensure the client is connected before attempting operations
+            if not self._client or not self._client.is_connected:
+                self._logger.error("Client not connected, skipping setup")
+                return
+
             if self._unit_update_flag:
                 if self._display_unit is not None:
                     if unit_char := self._client.services.get_characteristic(ALIRO_CHARACTERISTIC_UUID):
@@ -424,9 +434,8 @@ class EtekcitySmartFitnessScale:
                 )
             else:
                 self._logger.error("Weight notification characteristic not found")
-                # If we can't get weight notifications, the connection is useless.
-                # Disconnect and let the scanner find it again later.
-                await self._client.disconnect()
+                # With Bluetooth proxies, services may not be immediately available.
+                # Don't force disconnect - let it fail naturally or timeout.
                 return
             
             if not self._hw_version:
