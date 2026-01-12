@@ -201,7 +201,7 @@ class EtekcitySmartFitnessScale:
                 # We want mac address on macOS
                 scanner_kwargs["cb"] = {"use_bdaddr": True}
 
-            PlatformBleakScanner = get_platform_scanner_backend_type()
+            PlatformBleakScanner, _ = get_platform_scanner_backend_type()
             self._scanner = PlatformBleakScanner(**scanner_kwargs)
         else:
             self._scanner = bleak_scanner_backend

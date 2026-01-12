@@ -13,7 +13,7 @@ async def test_scale_initialization():
     callback = Mock()
     with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner_backend:
         mock_scanner = AsyncMock()
-        mock_get_scanner_backend.return_value = Mock(return_value=mock_scanner)
+        mock_get_scanner_backend.return_value = (Mock(return_value=mock_scanner), "mock_backend")
         scale = EtekcitySmartFitnessScale("00:11:22:33:44:55", callback)
 
         assert scale.address == "00:11:22:33:44:55"
@@ -26,7 +26,7 @@ async def test_scale_notification_handler():
     callback = Mock()
     with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner_backend:
         mock_scanner = AsyncMock()
-        mock_get_scanner_backend.return_value = Mock(return_value=mock_scanner)
+        mock_get_scanner_backend.return_value = (Mock(return_value=mock_scanner), "mock_backend")
         scale = EtekcitySmartFitnessScale("00:11:22:33:44:55", callback)
         scale._hw_version = "1.0"
         scale._sw_version = "2.0"
@@ -49,7 +49,7 @@ async def test_scale_notification_handler():
 async def test_etekcity_scale_set_display_unit(display_unit):
     with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner_backend:
         mock_scanner = AsyncMock()
-        mock_get_scanner_backend.return_value = Mock(return_value=mock_scanner)
+        mock_get_scanner_backend.return_value = (Mock(return_value=mock_scanner), "mock_backend")
         scale = EtekcitySmartFitnessScale("00:11:22:33:44:55", Mock())
         scale.display_unit = display_unit
 
@@ -91,7 +91,7 @@ def test_parse(test_id, input_data, expected_output):
 async def test_scale_start_stop():
     with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner_backend:
         mock_scanner = AsyncMock()
-        mock_get_scanner_backend.return_value = Mock(return_value=mock_scanner)
+        mock_get_scanner_backend.return_value = (Mock(return_value=mock_scanner), "mock_backend")
 
         scale = EtekcitySmartFitnessScale("00:11:22:33:44:55", Mock())
 
