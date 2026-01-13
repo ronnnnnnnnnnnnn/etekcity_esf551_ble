@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from datetime import date
 from enum import IntEnum
@@ -365,6 +366,8 @@ class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
+        cooldown_seconds: int = 0,
+        logger: logging.Logger | None = None,
     ) -> None:
         """
         Initialize the scale interface with body metrics calculation.
@@ -380,8 +383,10 @@ class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
                           to this value upon connection.
             scanning_mode: Mode for BLE scanning (ACTIVE or PASSIVE).
             adapter: Bluetooth adapter to use (Linux only).
-            proxy_mode: Bluetooth proxy mode (NATIVE, PROXY, or HYBRID).
-            esphome_clients: List of ESPHome API clients for proxy mode.
+            bleak_scanner_backend: Optional custom BLE scanner backend.
+            cooldown_seconds: Optional cooldown period in seconds to ignore
+                              new advertisements after a disconnection.
+            logger: Optional logger instance.
         """
         self._sex = sex
         self._birthdate = birthdate
@@ -396,6 +401,8 @@ class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
             scanning_mode,
             adapter,
             bleak_scanner_backend,
+            cooldown_seconds,
+            logger,
         )
 
     def _wrapped_notification_callback(

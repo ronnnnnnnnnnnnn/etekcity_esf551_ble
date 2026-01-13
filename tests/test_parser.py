@@ -7,6 +7,7 @@ from src.etekcity_esf551_ble.parser import (
     WeightUnit,
     parse,
 )
+from bleak.backends.device import BLEDevice
 
 @pytest.mark.asyncio
 async def test_scale_initialization():
@@ -100,6 +101,55 @@ async def test_scale_start_stop():
 
         await scale.async_stop()
         mock_scanner.stop.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_advertisement_callback_cooldown():
+    with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner_backend, \
+         patch("src.etekcity_esf551_ble.parser.establish_connection") as mock_establish_connection, \
+         patch("src.etekcity_esf551_ble.parser.time.time") as mock_time:
+        
+        mock_scanner = AsyncMock()
+        mock_get_scanner_backend.return_value = (Mock(return_value=mock_scanner), "mock_backend")
+        mock_client = AsyncMock()
+        mock_client.is_connected = True
+        mock_establish_connection.return_value = mock_client
+        
+        # Initialize with 10 second cooldown
+        scale = EtekcitySmartFitnessScale(
+            "00:11:22:33:44:55", 
+            Mock(), 
+            cooldown_seconds=10
+        )
+        
+        ble_device = Mock(spec=BLEDevice)
+        ble_device.address = "00:11:22:33:44:55"
+        
+        # First connection attempt - should succeed
+        mock_time.return_value = 100
+        await scale._advertisement_callback(ble_device, Mock())
+        mock_establish_connection.assert_called_once()
+        
+        # Simulate disconnection
+        scale._unavailable_callback(mock_client)
+        assert scale._last_disconnect_time == 100
+        
+        # Reset mock
+        mock_establish_connection.reset_mock()
+        
+        # Immediate reconnection attempt (within cooldown) - should be ignored
+        mock_time.return_value = 105  # 5 seconds elapsed
+        await scale._advertisement_callback(ble_device, Mock())
+        mock_establish_connection.assert_not_called()
+        
+        # Connection attempt after cooldown - should succeed
+        mock_time.return_value = 111  # 11 seconds elapsed
+        await scale._advertisement_callback(ble_device, Mock())
+        mock_establish_connection.assert_called_once()
+        
+        # Verify cooldown_end_time is set correctly
+        assert scale._cooldown_end_time == 110  # 100 (disconnect) + 10 (cooldown)
+
 
 
 if __name__ == "__main__":

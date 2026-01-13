@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import logging
+import time
 import platform
 import struct
 from collections.abc import Callable
@@ -158,6 +159,7 @@ class EtekcitySmartFitnessScale:
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
+        cooldown_seconds: int = 0,
         logger: logging.Logger | None = None,
     ) -> None:
         """
@@ -172,6 +174,8 @@ class EtekcitySmartFitnessScale:
             scanning_mode: Mode for BLE scanning (ACTIVE or PASSIVE)
             adapter: Bluetooth adapter to use (Linux only)
             bleak_scanner_backend: Optional custom BLE scanner backend
+            cooldown_seconds: Optional cooldown period in seconds to ignore
+                              new advertisements after a disconnection.
             logger: Optional logger instance. If not provided, uses the library's
                     internal logger.
         """
@@ -180,6 +184,8 @@ class EtekcitySmartFitnessScale:
 
         self.address = address
         self._notification_callback = notification_callback
+        self._cooldown_seconds = cooldown_seconds
+        self._cooldown_end_time: float = 0
 
         if bleak_scanner_backend is None:
             scanner_kwargs: dict[str, Any] = {
@@ -311,6 +317,8 @@ class EtekcitySmartFitnessScale:
             _: The BleakClient instance that disconnected
         """
         self._logger.debug("Scale disconnected")
+        disconnect_time = time.time()
+        self._cooldown_end_time = disconnect_time + self._cooldown_seconds
         self._client = None
 
     async def _advertisement_callback(
@@ -328,6 +336,15 @@ class EtekcitySmartFitnessScale:
             _: Advertisement data (unused)
         """
         if ble_device.address != self.address:
+            return
+
+        # Ignore advertisements received during cooldown period
+        # This prevents queued callbacks from being processed after cooldown expires
+        if self._cooldown_seconds > 0 and time.time() < self._cooldown_end_time:
+            self._logger.debug(
+                "Ignoring advertisement during cooldown period (cooldown ends at %s)",
+                self._cooldown_end_time
+            )
             return
 
         async with self._lock:
