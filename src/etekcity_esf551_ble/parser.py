@@ -341,10 +341,6 @@ class EtekcitySmartFitnessScale:
         # Ignore advertisements received during cooldown period
         # This prevents queued callbacks from being processed after cooldown expires
         if self._cooldown_seconds > 0 and time.time() < self._cooldown_end_time:
-            self._logger.debug(
-                "Ignoring advertisement during cooldown period (cooldown ends at %s)",
-                self._cooldown_end_time
-            )
             return
 
         async with self._lock:
