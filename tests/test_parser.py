@@ -132,7 +132,7 @@ async def test_advertisement_callback_cooldown():
         
         # Simulate disconnection
         scale._unavailable_callback(mock_client)
-        assert scale._last_disconnect_time == 100
+        assert scale._cooldown_end_time == 110  # 100 (disconnect) + 10 (cooldown)
         
         # Reset mock
         mock_establish_connection.reset_mock()
@@ -146,9 +146,6 @@ async def test_advertisement_callback_cooldown():
         mock_time.return_value = 111  # 11 seconds elapsed
         await scale._advertisement_callback(ble_device, Mock())
         mock_establish_connection.assert_called_once()
-        
-        # Verify cooldown_end_time is set correctly
-        assert scale._cooldown_end_time == 110  # 100 (disconnect) + 10 (cooldown)
 
 
 
