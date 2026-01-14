@@ -40,8 +40,7 @@ IS_MACOS = SYSTEM == "Darwin"
 
 
 if IS_LINUX:
-    from bleak.backends.bluezdbus.advertisement_monitor import OrPattern
-    from bleak.backends.bluezdbus.scanner import BlueZScannerArgs
+    from bleak.args.bluez import BlueZScannerArgs, OrPattern
 
     # or_patterns is a workaround for the fact that passive scanning
     # needs at least one matcher to be set. The below matcher
@@ -341,6 +340,10 @@ class EtekcitySmartFitnessScale:
         # Ignore advertisements received during cooldown period
         # This prevents queued callbacks from being processed after cooldown expires
         if self._cooldown_seconds > 0 and time.time() < self._cooldown_end_time:
+            self._logger.debug(
+                "Ignoring advertisement during cooldown period (cooldown ends at %s)",
+                self._cooldown_end_time
+            )
             return
 
         async with self._lock:
