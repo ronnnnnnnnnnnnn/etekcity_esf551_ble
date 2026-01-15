@@ -93,7 +93,7 @@ async def test_scale_direct_instantiation():
         mock_scanner_class = Mock()
         mock_scanner_instance = Mock()
         mock_scanner_class.return_value = mock_scanner_instance
-        mock_get_scanner.return_value = mock_scanner_class
+        mock_get_scanner.return_value = (mock_scanner_class, None)
 
         # Test ESF551 direct instantiation
         esf551_scale = ESF551Scale("00:11:22:33:44:55", callback)

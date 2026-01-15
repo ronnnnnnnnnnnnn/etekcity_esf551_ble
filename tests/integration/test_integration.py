@@ -26,7 +26,7 @@ async def test_esf551_full_workflow():
         "src.etekcity_esf551_ble.esf551.parser.parse"
     ) as mock_parse:
         mock_scanner_class, _ = _mock_scanner()
-        mock_get_scanner.return_value = mock_scanner_class
+        mock_get_scanner.return_value = (mock_scanner_class, None)
         mock_parse.return_value = {
             "weight": 75.5,
             "impedance": 500,
@@ -50,7 +50,7 @@ async def test_esf24_kg_only_workflow():
 
     with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner:
         mock_scanner_class, _ = _mock_scanner()
-        mock_get_scanner.return_value = mock_scanner_class
+        mock_get_scanner.return_value = (mock_scanner_class, None)
 
         scale = ESF24Scale("00:11:22:33:44:55", callback)
         weight_payload = bytearray(b"\x10\x0b\x15\x27\x10\x01\x00\x00\x00\x00\x00")
@@ -74,7 +74,7 @@ async def test_body_metrics_integration():
         "src.etekcity_esf551_ble.esf551.parser.parse"
     ) as mock_parse:
         mock_scanner_class, _ = _mock_scanner()
-        mock_get_scanner.return_value = mock_scanner_class
+        mock_get_scanner.return_value = (mock_scanner_class, None)
 
         body_scale = ESF551ScaleWithBodyMetrics(
             "00:11:22:33:44:55",

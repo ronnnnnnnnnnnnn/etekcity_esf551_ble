@@ -37,7 +37,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "bleak",
+    "bleak>=2.0.0,<3.0.0",
     "bleak_retry_connector",
 ]
 
