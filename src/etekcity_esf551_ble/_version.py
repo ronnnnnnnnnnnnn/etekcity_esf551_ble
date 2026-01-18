@@ -1,4 +1,4 @@
-__version__ = "0.4.0-beta.4"
+__version__ = "0.4.0-beta.5"
 
 def _parse_version_info(version_str: str) -> tuple[int, ...]:
     """Parse version string into tuple of integers, handling suffixes."""
