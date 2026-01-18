@@ -4,9 +4,8 @@ import abc
 import asyncio
 import dataclasses
 import logging
+import time
 import platform
-import re
-import subprocess
 from collections.abc import Callable
 from enum import IntEnum, StrEnum
 from typing import Any
@@ -31,34 +30,16 @@ IS_MACOS = SYSTEM == "Darwin"
 
 
 if IS_LINUX:
-    from bleak.backends.bluezdbus.advertisement_monitor import OrPattern
-    from bleak.backends.bluezdbus.scanner import BlueZScannerArgs
+    from bleak.args.bluez import BlueZScannerArgs, OrPattern
 
-    def _detect_bluez_version() -> tuple[int, int] | None:  # pragma: no cover – env-specific
-        """Return the system BlueZ version as a tuple (major, minor)."""
-        try:
-            out = subprocess.check_output(['bluetoothd', '-v'], text=True, timeout=1).strip()
-            # Expected format: '5.68'
-            if match := re.match(r"(\d+)\.(\d+)", out):
-                return int(match.group(1)), int(match.group(2))
-        except Exception:
-            pass
-        return None
-
-    _BLUETOOTH_VERSION = _detect_bluez_version()
-
-    if _BLUETOOTH_VERSION and _BLUETOOTH_VERSION >= (5, 68):
-        # BlueZ >= 5.68 allows empty matcher list for passive scans
-        PASSIVE_SCANNER_ARGS: BlueZScannerArgs | None = None
-    else:
-        # Fallback matcher that matches anything (BlueZ < 5.68 requirement)
-        PASSIVE_SCANNER_ARGS = BlueZScannerArgs(
-            or_patterns=[
-                OrPattern(0, AdvertisementDataType.FLAGS, b"\x02"),
-                OrPattern(0, AdvertisementDataType.FLAGS, b"\x06"),
-                OrPattern(0, AdvertisementDataType.FLAGS, b"\x1a"),
-            ]
-        )
+    PASSIVE_OR_PATTERNS = [
+        OrPattern(0, AdvertisementDataType.FLAGS, b"\x02"),
+        OrPattern(0, AdvertisementDataType.FLAGS, b"\x06"),
+        OrPattern(0, AdvertisementDataType.FLAGS, b"\x1a"),
+    ]
+    PASSIVE_SCANNER_ARGS = BlueZScannerArgs(
+        or_patterns=PASSIVE_OR_PATTERNS
+    )
 
 class BluetoothScanningMode(StrEnum):
     PASSIVE = "passive"
@@ -130,6 +111,8 @@ class EtekcitySmartFitnessScale(abc.ABC):
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
+        cooldown_seconds: int = 0,
+        logger: logging.Logger | None = None,
     ) -> None:
         """
         Initialize the scale interface.
@@ -143,8 +126,13 @@ class EtekcitySmartFitnessScale(abc.ABC):
             scanning_mode: Mode for BLE scanning (ACTIVE or PASSIVE)
             adapter: Bluetooth adapter to use (Linux only)
             bleak_scanner_backend: Optional custom BLE scanner backend
+            cooldown_seconds: Optional cooldown period in seconds to ignore
+                              new advertisements after a disconnection.
+            logger: Optional logger instance. If not provided, uses the library's
+                    internal logger.
         """
-        _LOGGER.info(f"Initializing EtekcitySmartFitnessScale for address: {address}")
+        self._logger = logger or _LOGGER
+        self._logger.info(f"Initializing EtekcitySmartFitnessScale for address: {address}")
 
         self.address = address
         self._client: BleakClient | None = None
@@ -153,12 +141,14 @@ class EtekcitySmartFitnessScale(abc.ABC):
         self._initializing: bool = False
         self._display_unit: WeightUnit | None = None
         self._notification_callback = notification_callback
+        self._cooldown_seconds = cooldown_seconds
+        self._cooldown_end_time: float = 0
 
         if bleak_scanner_backend is None:
             scanner_kwargs: dict[str, Any] = {
                 "detection_callback": self._advertisement_callback,
                 "service_uuids": None,
-                "scanning_mode": SCANNING_MODE_TO_BLEAK[scanning_mode],
+                "scanning_mode": BluetoothScanningMode.ACTIVE,
                 "bluez": {},
                 "cb": {},
             }
@@ -167,8 +157,9 @@ class EtekcitySmartFitnessScale(abc.ABC):
                 # Only Linux supports multiple adapters
                 if adapter:
                     scanner_kwargs["adapter"] = adapter
-                if scanning_mode == BluetoothScanningMode.PASSIVE and PASSIVE_SCANNER_ARGS:
+                if scanning_mode == BluetoothScanningMode.PASSIVE:
                     scanner_kwargs["bluez"] = PASSIVE_SCANNER_ARGS
+                    scanner_kwargs["scanning_mode"] = BluetoothScanningMode.PASSIVE
             elif IS_MACOS:
                 # We want mac address on macOS
                 scanner_kwargs["cb"] = {"use_bdaddr": True}
@@ -179,7 +170,8 @@ class EtekcitySmartFitnessScale(abc.ABC):
             self._scanner = bleak_scanner_backend
             self._scanner.register_detection_callback(self._advertisement_callback)
         self._lock = asyncio.Lock()
-        self.display_unit = display_unit
+        if display_unit is not None:
+            self.display_unit = display_unit
 
     @property
     def hw_version(self) -> str:
@@ -195,7 +187,8 @@ class EtekcitySmartFitnessScale(abc.ABC):
 
     @display_unit.setter
     def display_unit(self, value):
-        self._display_unit = value
+        if value is not None:
+            self._display_unit = value
 
     @abc.abstractmethod
     def _notification_handler(
@@ -229,26 +222,26 @@ class EtekcitySmartFitnessScale(abc.ABC):
 
     async def async_start(self) -> None:
         """Start the callbacks."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Starting EtekcitySmartFitnessScale for address: %s", self.address
         )
         try:
             async with self._lock:
                 await self._scanner.start()
         except Exception as ex:
-            _LOGGER.error("Failed to start scanner: %s", ex)
+            self._logger.error("Failed to start scanner: %s", ex)
             raise
 
     async def async_stop(self) -> None:
         """Stop the callbacks."""
-        _LOGGER.debug(
+        self._logger.debug(
             "Stopping EtekcitySmartFitnessScale for address: %s", self.address
         )
         try:
             async with self._lock:
                 await self._scanner.stop()
         except Exception as ex:
-            _LOGGER.error("Failed to stop scanner: %s", ex)
+            self._logger.error("Failed to stop scanner: %s", ex)
             raise
 
     def _unavailable_callback(self, _: BleakClient) -> None:
@@ -261,8 +254,10 @@ class EtekcitySmartFitnessScale(abc.ABC):
         Args:
             _: The BleakClient instance that disconnected (unused)
         """
+        self._logger.debug("Scale disconnected")
+        disconnect_time = time.time()
+        self._cooldown_end_time = disconnect_time + self._cooldown_seconds
         self._client = None
-        _LOGGER.debug("Scale disconnected")
 
     async def _advertisement_callback(
         self, ble_device: BLEDevice, _: AdvertisementData
@@ -281,6 +276,15 @@ class EtekcitySmartFitnessScale(abc.ABC):
         if ble_device.address != self.address:
             return
 
+        # Ignore advertisements received during cooldown period
+        # This prevents queued callbacks from being processed after cooldown expires
+        if self._cooldown_seconds > 0 and time.time() < self._cooldown_end_time:
+            self._logger.debug(
+                "Ignoring advertisement during cooldown period (cooldown ends at %s)",
+                self._cooldown_end_time,
+            )
+            return
+
         async with self._lock:
             if self._client is not None or self._initializing:
                 return
@@ -289,16 +293,21 @@ class EtekcitySmartFitnessScale(abc.ABC):
 
         try:
             try:
+                self._logger.debug("Connecting to scale: %s", self.address)
                 self._client = await establish_connection(
                     BleakClient,
                     ble_device,
                     self.address,
                     self._unavailable_callback,
                 )
-                _LOGGER.debug("Connected to scale: %s", self.address)
+                self._logger.debug("Connected to scale: %s", self.address)
             except Exception as ex:
-                _LOGGER.exception("Could not connect to scale: %s(%s)", type(ex), ex.args)
+                self._logger.exception("Could not connect to scale: %s(%s)", type(ex), ex.args)
                 self._client = None
+                return
+
+            if not self._client or not self._client.is_connected:
+                self._logger.error("Client not connected, skipping setup")
                 return
 
             await self._start_scale_session(ble_device)

@@ -91,12 +91,18 @@ class ESF551Scale(EtekcitySmartFitnessScale):
             await self._setup_after_connection()
 
             # Start receiving weight notifications
-            await self._client.start_notify(
-                WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
-                lambda char, data: self._notification_handler(
-                    char, data, ble_device.name, ble_device.address
-                ),
-            )
+            if weight_char := self._client.services.get_characteristic(WEIGHT_CHARACTERISTIC_UUID_NOTIFY):
+                await self._client.start_notify(
+                    weight_char,
+                    lambda char, data: self._notification_handler(
+                        char, data, ble_device.name, ble_device.address
+                    ),
+                )
+            else:
+                _LOGGER.error("Weight notification characteristic not found")
+                # With Bluetooth proxies, services may not be immediately available.
+                # Don't force disconnect - let it fail naturally or timeout.
+                return
         except Exception as ex:  # pragma: no cover – log and reset on any failure
             _LOGGER.exception("%s(%s)", type(ex), ex.args)
             self._client = None
@@ -147,34 +153,39 @@ class ESF551Scale(EtekcitySmartFitnessScale):
         try:
             # Read hardware version (only once)
             if not self._hw_version:
-                hw_data = await self._client.read_gatt_char(
-                    HW_REVISION_STRING_CHARACTERISTIC_UUID
-                )
-                self._hw_version = hw_data.decode()
-                _LOGGER.debug("ESF-551 HW version: %s", self._hw_version)
+                if hw_char := self._client.services.get_characteristic(HW_REVISION_STRING_CHARACTERISTIC_UUID):
+                    hw_data = await self._client.read_gatt_char(hw_char)
+                    self._hw_version = hw_data.decode()
+                    _LOGGER.debug("ESF-551 HW version: %s", self._hw_version)
+                else:
+                    _LOGGER.debug("HW version characteristic not found")
             
             # Read software version (every connection)
-            sw_data = await self._client.read_gatt_char(
-                SW_REVISION_STRING_CHARACTERISTIC_UUID
-            )
-            self._sw_version = sw_data.decode()
-            _LOGGER.debug("ESF-551 SW version: %s", self._sw_version)
+            if sw_char := self._client.services.get_characteristic(SW_REVISION_STRING_CHARACTERISTIC_UUID):
+                sw_data = await self._client.read_gatt_char(sw_char)
+                self._sw_version = sw_data.decode()
+                _LOGGER.debug("ESF-551 SW version: %s", self._sw_version)
+            else:
+                _LOGGER.debug("SW version characteristic not found")
         except Exception as ex:
             _LOGGER.warning("Could not read ESF-551 version info: %s", ex)
 
         # Handle display unit change if requested
         if self._unit_update_flag and self._display_unit is not None:
             try:
-                payload = build_unit_update_payload(self._display_unit)
-                await self._client.write_gatt_char(
-                    ALIRO_CHARACTERISTIC_UUID, payload, False
-                )
-                _LOGGER.debug(
-                    "ESF-551 unit change request sent: %s (payload: %s)",
-                    self._display_unit,
-                    payload.hex()
-                )
-                self._unit_update_flag = False
+                if unit_char := self._client.services.get_characteristic(ALIRO_CHARACTERISTIC_UUID):
+                    payload = build_unit_update_payload(self._display_unit)
+                    await self._client.write_gatt_char(unit_char, payload, False)
+                    _LOGGER.debug(
+                        "ESF-551 unit change request sent: %s (payload: %s)",
+                        self._display_unit,
+                        payload.hex()
+                    )
+                    self._unit_update_flag = False
+                else:
+                    _LOGGER.warning(
+                        "Unit update characteristic not found, skipping unit update"
+                    )
             except Exception as ex:
                 _LOGGER.error("ESF-551 failed to request unit change: %s", ex)
 

@@ -89,6 +89,8 @@ class ESF24Scale(EtekcitySmartFitnessScale):
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend=None,
+        cooldown_seconds: int = 0,
+        logger: logging.Logger | None = None,
     ) -> None:
         enforced_unit = WeightUnit(display_unit) if display_unit is not None else WeightUnit.KG
         super().__init__(
@@ -98,6 +100,8 @@ class ESF24Scale(EtekcitySmartFitnessScale):
             scanning_mode,
             adapter,
             bleak_scanner_backend,
+            cooldown_seconds,
+            logger,
         )
         self._state_mask = 0
 
@@ -116,12 +120,20 @@ class ESF24Scale(EtekcitySmartFitnessScale):
                 ble_device.name,
                 ble_device.address,
             )
-            await self._client.start_notify(
-                WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
-                lambda char, data: self._notification_handler(
-                    char, data, ble_device.name, ble_device.address
-                ),
-            )
+            if weight_char := self._client.services.get_characteristic(
+                WEIGHT_CHARACTERISTIC_UUID_NOTIFY
+            ):
+                await self._client.start_notify(
+                    weight_char,
+                    lambda char, data: self._notification_handler(
+                        char, data, ble_device.name, ble_device.address
+                    ),
+                )
+            else:
+                _LOGGER.error("Weight notification characteristic not found")
+                # With Bluetooth proxies, services may not be immediately available.
+                # Don't force disconnect - let it fail naturally or timeout.
+                return
         except Exception as ex:
             _LOGGER.exception("%s(%s)", type(ex), ex.args)
             self._client = None
@@ -180,8 +192,11 @@ class ESF24Scale(EtekcitySmartFitnessScale):
         if not self._client:
             _LOGGER.warning("ESF-24 cannot send command; no active client")
             return
+        if not (command_char := self._client.services.get_characteristic(ALIRO_CHARACTERISTIC_UUID)):
+            _LOGGER.warning("ESF-24 command characteristic not found, skipping write")
+            return
         try:
-            await self._client.write_gatt_char(ALIRO_CHARACTERISTIC_UUID, data)
+            await self._client.write_gatt_char(command_char, data)
             _LOGGER.debug("ESF-24 command sent: %s", data.hex())
         except Exception as ex:
             _LOGGER.error("ESF-24 failed to send command %s: %s", data.hex(), ex)

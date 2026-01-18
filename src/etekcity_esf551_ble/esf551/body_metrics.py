@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from datetime import date
 from enum import IntEnum
@@ -365,6 +366,8 @@ class ESF551ScaleWithBodyMetrics(ESF551Scale):
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
+        cooldown_seconds: int = 0,
+        logger: logging.Logger | None = None,
     ) -> None:
         """
         Initialize the scale interface with body metrics calculation.
@@ -381,6 +384,9 @@ class ESF551ScaleWithBodyMetrics(ESF551Scale):
             scanning_mode: Mode for BLE scanning (ACTIVE or PASSIVE).
             adapter: Bluetooth adapter to use (Linux only).
             bleak_scanner_backend: Optional custom BLE scanner backend.
+            cooldown_seconds: Optional cooldown period in seconds to ignore
+                              new advertisements after a disconnection.
+            logger: Optional logger instance.
         """
         self._sex = sex
         self._birthdate = birthdate
@@ -397,18 +403,23 @@ class ESF551ScaleWithBodyMetrics(ESF551Scale):
             scanning_mode,
             adapter,
             bleak_scanner_backend,
+            cooldown_seconds,
+            logger,
         )
 
     def _wrapped_notification_callback(
         self, sex: Sex, birthdate: date, height_m: float, data: ScaleData
     ) -> None:
-        data.measurements |= _as_dictionary(
-            BodyMetrics(
-                data.measurements[WEIGHT_KEY],
-                height_m,
-                _calc_age(birthdate),
-                sex,
-                data.measurements[IMPEDANCE_KEY],
-            )
+        # Only calculate body metrics if impedance is present
+        body_metrics = BodyMetrics(
+            data.measurements[WEIGHT_KEY],
+            height_m,
+            _calc_age(birthdate),
+            sex,
+            data.measurements.get(IMPEDANCE_KEY),
         )
+        if IMPEDANCE_KEY in data.measurements:
+            data.measurements |= _as_dictionary(body_metrics)
+        else:
+            data.measurements['body_mass_index'] = body_metrics.body_mass_index
         self._original_callback(data)

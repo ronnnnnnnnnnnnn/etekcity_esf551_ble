@@ -1,8 +1,9 @@
 """Unit tests for scale classes."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from bleak.backends.device import BLEDevice
 
 from src.etekcity_esf551_ble import (
     ESF24Scale,
@@ -102,5 +103,44 @@ async def test_scale_direct_instantiation():
         # Test ESF24 direct instantiation
         esf24_scale = ESF24Scale("00:11:22:33:44:55", callback)
         assert isinstance(esf24_scale, ESF24Scale)
+
+
+@pytest.mark.asyncio
+async def test_advertisement_callback_cooldown():
+    with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner_backend, patch(
+        "src.etekcity_esf551_ble.parser.establish_connection"
+    ) as mock_establish_connection, patch("src.etekcity_esf551_ble.parser.time.time") as mock_time:
+        mock_scanner = AsyncMock()
+        mock_get_scanner_backend.return_value = (Mock(return_value=mock_scanner), "mock_backend")
+        mock_client = AsyncMock()
+        mock_client.is_connected = True
+        mock_establish_connection.return_value = mock_client
+
+        scale = ESF551Scale(
+            "00:11:22:33:44:55",
+            Mock(),
+            cooldown_seconds=10,
+        )
+        scale._start_scale_session = AsyncMock()
+
+        ble_device = Mock(spec=BLEDevice)
+        ble_device.address = "00:11:22:33:44:55"
+
+        mock_time.return_value = 100
+        await scale._advertisement_callback(ble_device, Mock())
+        mock_establish_connection.assert_called_once()
+
+        scale._unavailable_callback(mock_client)
+        assert scale._cooldown_end_time == 110
+
+        mock_establish_connection.reset_mock()
+
+        mock_time.return_value = 105
+        await scale._advertisement_callback(ble_device, Mock())
+        mock_establish_connection.assert_not_called()
+
+        mock_time.return_value = 111
+        await scale._advertisement_callback(ble_device, Mock())
+        mock_establish_connection.assert_called_once()
 
 
