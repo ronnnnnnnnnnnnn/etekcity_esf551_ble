@@ -8,9 +8,8 @@ from ..const import (
 from .parser import ESF24Scale
 
 __all__ = [
-    'ESF24Scale',
-    'DISPLAY_UNIT_KEY',
-    'WEIGHT_CHARACTERISTIC_UUID_NOTIFY',
-    'WEIGHT_KEY',
+    "ESF24Scale",
+    "DISPLAY_UNIT_KEY",
+    "WEIGHT_CHARACTERISTIC_UUID_NOTIFY",
+    "WEIGHT_KEY",
 ]
-

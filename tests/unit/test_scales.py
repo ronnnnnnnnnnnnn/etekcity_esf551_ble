@@ -90,7 +90,9 @@ async def test_scale_direct_instantiation():
     callback = Mock()
 
     # Mock the scanner to avoid event loop issues
-    with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner:
+    with patch(
+        "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
+    ) as mock_get_scanner:
         mock_scanner_class = Mock()
         mock_scanner_instance = Mock()
         mock_scanner_class.return_value = mock_scanner_instance
@@ -107,11 +109,18 @@ async def test_scale_direct_instantiation():
 
 @pytest.mark.asyncio
 async def test_advertisement_callback_cooldown():
-    with patch("src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type") as mock_get_scanner_backend, patch(
+    with patch(
+        "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
+    ) as mock_get_scanner_backend, patch(
         "src.etekcity_esf551_ble.parser.establish_connection"
-    ) as mock_establish_connection, patch("src.etekcity_esf551_ble.parser.time.time") as mock_time:
+    ) as mock_establish_connection, patch(
+        "src.etekcity_esf551_ble.parser.time.time"
+    ) as mock_time:
         mock_scanner = AsyncMock()
-        mock_get_scanner_backend.return_value = (Mock(return_value=mock_scanner), "mock_backend")
+        mock_get_scanner_backend.return_value = (
+            Mock(return_value=mock_scanner),
+            "mock_backend",
+        )
         mock_client = AsyncMock()
         mock_client.is_connected = True
         mock_establish_connection.return_value = mock_client
@@ -142,5 +151,3 @@ async def test_advertisement_callback_cooldown():
         mock_time.return_value = 111
         await scale._advertisement_callback(ble_device, Mock())
         mock_establish_connection.assert_called_once()
-
-

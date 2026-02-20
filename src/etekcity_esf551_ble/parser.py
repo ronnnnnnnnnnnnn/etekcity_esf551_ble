@@ -37,9 +37,8 @@ if IS_LINUX:
         OrPattern(0, AdvertisementDataType.FLAGS, b"\x06"),
         OrPattern(0, AdvertisementDataType.FLAGS, b"\x1a"),
     ]
-    PASSIVE_SCANNER_ARGS = BlueZScannerArgs(
-        or_patterns=PASSIVE_OR_PATTERNS
-    )
+    PASSIVE_SCANNER_ARGS = BlueZScannerArgs(or_patterns=PASSIVE_OR_PATTERNS)
+
 
 class BluetoothScanningMode(StrEnum):
     PASSIVE = "passive"
@@ -102,7 +101,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
         display_unit: The current display unit of the scale (KG, LB, or ST)
     """
 
-
     def __init__(
         self,
         address: str,
@@ -132,7 +130,9 @@ class EtekcitySmartFitnessScale(abc.ABC):
                     internal logger.
         """
         self._logger = logger or _LOGGER
-        self._logger.info(f"Initializing EtekcitySmartFitnessScale for address: {address}")
+        self._logger.info(
+            f"Initializing EtekcitySmartFitnessScale for address: {address}"
+        )
 
         self.address = address
         self._client: BleakClient | None = None
@@ -206,8 +206,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
             name: Device name of the scale
             address: Bluetooth address of the scale
         """
-    
-    
 
     @abc.abstractmethod
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
@@ -218,7 +216,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
         notification callbacks (typically via `self._client.start_notify`).
         """
         raise NotImplementedError
-
 
     async def async_start(self) -> None:
         """Start the callbacks."""
@@ -302,7 +299,9 @@ class EtekcitySmartFitnessScale(abc.ABC):
                 )
                 self._logger.debug("Connected to scale: %s", self.address)
             except Exception as ex:
-                self._logger.exception("Could not connect to scale: %s(%s)", type(ex), ex.args)
+                self._logger.exception(
+                    "Could not connect to scale: %s(%s)", type(ex), ex.args
+                )
                 self._client = None
                 return
 

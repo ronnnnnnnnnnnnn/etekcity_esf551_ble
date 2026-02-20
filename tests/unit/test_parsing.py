@@ -36,4 +36,3 @@ def test_parse():
     )
     result = esf551_parse(invalid_length)
     assert result is None
-

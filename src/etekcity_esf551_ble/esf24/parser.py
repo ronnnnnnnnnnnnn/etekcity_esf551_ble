@@ -8,8 +8,17 @@ import time
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 
-from ..const import ALIRO_CHARACTERISTIC_UUID, WEIGHT_CHARACTERISTIC_UUID_NOTIFY, WEIGHT_KEY
-from ..parser import BluetoothScanningMode, EtekcitySmartFitnessScale, ScaleData, WeightUnit
+from ..const import (
+    ALIRO_CHARACTERISTIC_UUID,
+    WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
+    WEIGHT_KEY,
+)
+from ..parser import (
+    BluetoothScanningMode,
+    EtekcitySmartFitnessScale,
+    ScaleData,
+    WeightUnit,
+)
 from .const import CMD_END_MEASUREMENT, CMD_SET_DISPLAY_UNIT
 
 
@@ -92,7 +101,9 @@ class ESF24Scale(EtekcitySmartFitnessScale):
         cooldown_seconds: int = 0,
         logger: logging.Logger | None = None,
     ) -> None:
-        enforced_unit = WeightUnit(display_unit) if display_unit is not None else WeightUnit.KG
+        enforced_unit = (
+            WeightUnit(display_unit) if display_unit is not None else WeightUnit.KG
+        )
         super().__init__(
             address,
             notification_callback,
@@ -141,16 +152,14 @@ class ESF24Scale(EtekcitySmartFitnessScale):
     def _notification_handler(
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
     ) -> None:
-        if (
-            len(payload) == 11
-            and payload[5] == 1
-            and payload[0:3] == b"\x10\x0b\x15"
-        ):
+        if len(payload) == 11 and payload[5] == 1 and payload[0:3] == b"\x10\x0b\x15":
             _LOGGER.debug(
                 "ESF-24 stable weight received (%s). Scheduling measurement end command.",
                 address,
             )
-            asyncio.create_task(self._safe_write(CMD_END_MEASUREMENT), name="esf24-end-measurement")
+            asyncio.create_task(
+                self._safe_write(CMD_END_MEASUREMENT), name="esf24-end-measurement"
+            )
             data = parse_weight(payload)
 
             scale_data = ScaleData()
@@ -158,12 +167,9 @@ class ESF24Scale(EtekcitySmartFitnessScale):
             scale_data.address = address
             scale_data.display_unit = self.display_unit
             scale_data.measurements = data
-            
+
             self._notification_callback(scale_data)
-        elif (
-            len(payload) == 15
-            and payload[0:3] == b"\x12\x0f\x15"
-        ):
+        elif len(payload) == 15 and payload[0:3] == b"\x12\x0f\x15":
             if not self._state_mask & _STATE_UNIT_SET:
                 self._state_mask |= _STATE_UNIT_SET
                 _LOGGER.debug(
@@ -172,10 +178,7 @@ class ESF24Scale(EtekcitySmartFitnessScale):
                 )
                 cmd = build_unit_update_command(self.display_unit)
                 asyncio.create_task(self._safe_write(cmd), name="esf24-unit-update")
-        elif (
-            len(payload) == 11
-            and payload[0:3] == b"\x14\x0b\x15"
-        ):
+        elif len(payload) == 11 and payload[0:3] == b"\x14\x0b\x15":
             if not self._state_mask & _STATE_MEASUREMENT_INIT:
                 self._state_mask |= _STATE_MEASUREMENT_INIT
                 _LOGGER.debug(
@@ -183,7 +186,9 @@ class ESF24Scale(EtekcitySmartFitnessScale):
                     address,
                 )
                 cmd = build_measurement_initiation_command()
-                asyncio.create_task(self._safe_write(cmd), name="esf24-measurement-init")
+                asyncio.create_task(
+                    self._safe_write(cmd), name="esf24-measurement-init"
+                )
         else:
             _LOGGER.debug("ESF-24 ignoring unrecognized payload: %s", payload.hex())
 
@@ -192,7 +197,11 @@ class ESF24Scale(EtekcitySmartFitnessScale):
         if not self._client:
             _LOGGER.warning("ESF-24 cannot send command; no active client")
             return
-        if not (command_char := self._client.services.get_characteristic(ALIRO_CHARACTERISTIC_UUID)):
+        if not (
+            command_char := self._client.services.get_characteristic(
+                ALIRO_CHARACTERISTIC_UUID
+            )
+        ):
             _LOGGER.warning("ESF-24 command characteristic not found, skipping write")
             return
         try:

@@ -71,9 +71,18 @@ class BodyMetrics:
         bmi_factor = [1.524, 1.545]
         constant = [22, 12.7]
 
-        bfp = floor((age_factor[self.sex] * self.age + 
-               bmi_factor[self.sex] * self.body_mass_index - 
-               500/self.impedance - constant[self.sex]) * 10) / 10
+        bfp = (
+            floor(
+                (
+                    age_factor[self.sex] * self.age
+                    + bmi_factor[self.sex] * self.body_mass_index
+                    - 500 / self.impedance
+                    - constant[self.sex]
+                )
+                * 10
+            )
+            / 10
+        )
         return max(5, min(75, bfp))
 
     @cached_property
@@ -100,8 +109,11 @@ class BodyMetrics:
         """
         bfp_factor = [0.965, 0.983]
         vfv_factor = [0.22, 0.303]
-        return round(bfp_factor[self.sex] * self.body_fat_percentage - 
-                vfv_factor[self.sex] * self.visceral_fat_value, 1)
+        return round(
+            bfp_factor[self.sex] * self.body_fat_percentage
+            - vfv_factor[self.sex] * self.visceral_fat_value,
+            1,
+        )
 
     @cached_property
     def visceral_fat_value(self) -> int:
@@ -117,10 +129,12 @@ class BodyMetrics:
         bfp_factor = [0.0082, 0.0943]
         fat_factor = [0.026, -0.0534]
         constant = [14.2692, 16.215]
-        vfv = int(bmi_factor[self.sex] * self.body_mass_index + 
-               bfp_factor[self.sex] * self.body_fat_percentage + 
-               fat_factor[self.sex] * (self.weight - self.fat_free_weight) - 
-               constant[self.sex])
+        vfv = int(
+            bmi_factor[self.sex] * self.body_mass_index
+            + bfp_factor[self.sex] * self.body_fat_percentage
+            + fat_factor[self.sex] * (self.weight - self.fat_free_weight)
+            - constant[self.sex]
+        )
         return max(1, min(30, vfv))
 
     @cached_property
@@ -136,7 +150,9 @@ class BodyMetrics:
         ff1_factor = [0.05, 0.06]
         ff2_factor = [0.76, 0.73]
         ff1 = max(1, ff1_factor[self.sex] * self.fat_free_weight)
-        bwp = round(ff2_factor[self.sex] * (self.fat_free_weight - ff1) / self.weight * 100, 1)
+        bwp = round(
+            ff2_factor[self.sex] * (self.fat_free_weight - ff1) / self.weight * 100, 1
+        )
         return max(10, min(80, bwp))
 
     @cached_property
@@ -165,7 +181,9 @@ class BodyMetrics:
         ff1_factor = [0.05, 0.06]
         ff2_factor = [0.68, 0.62]
         ff1 = max(1, ff1_factor[self.sex] * self.fat_free_weight)
-        return round(ff2_factor[self.sex] * (self.fat_free_weight - ff1) / self.weight * 100, 1)
+        return round(
+            ff2_factor[self.sex] * (self.fat_free_weight - ff1) / self.weight * 100, 1
+        )
 
     @cached_property
     def muscle_mass(self) -> float:
@@ -203,8 +221,13 @@ class BodyMetrics:
             float: The calculated protein percentage value.
         """
         bfp_factor = [1, 1.05]
-        bpp = round(100 - bfp_factor[self.sex] * self.body_fat_percentage - 
-               self.bone_mass / self.weight * 100 - self.body_water_percentage, 1)
+        bpp = round(
+            100
+            - bfp_factor[self.sex] * self.body_fat_percentage
+            - self.bone_mass / self.weight * 100
+            - self.body_water_percentage,
+            1,
+        )
         return max(5, bpp)
 
     @cached_property
@@ -220,7 +243,9 @@ class BodyMetrics:
         height_factor = [100, 137]
         constant = [80, 110]
         factor = [0.7, 0.45]
-        res = factor[self.sex] * (height_factor[self.sex] * self.height - constant[self.sex])
+        res = factor[self.sex] * (
+            height_factor[self.sex] * self.height - constant[self.sex]
+        )
         if res <= self.weight:
             if res * 1.3 < self.weight:
                 return 50
@@ -246,8 +271,18 @@ class BodyMetrics:
         if constant[self.sex] < self.body_fat_percentage:
             if self.body_fat_percentage >= 45:
                 return 50
-            return int(100 - 50 * (self.body_fat_percentage - constant[self.sex]) / (45 - constant[self.sex]))
-        return int(100 - 50 * (constant[self.sex] - self.body_fat_percentage) / (constant[self.sex] - 5))
+            return int(
+                100
+                - 50
+                * (self.body_fat_percentage - constant[self.sex])
+                / (45 - constant[self.sex])
+            )
+        return int(
+            100
+            - 50
+            * (constant[self.sex] - self.body_fat_percentage)
+            / (constant[self.sex] - 5)
+        )
 
     @cached_property
     def bmi_score(self) -> int:
@@ -334,7 +369,9 @@ class BodyMetrics:
 def _calc_age(birthdate: date) -> int:
     today = date.today()
     years = today.year - birthdate.year
-    if today.month < birthdate.month or (today.month == birthdate.month and today.day < birthdate.day):
+    if today.month < birthdate.month or (
+        today.month == birthdate.month and today.day < birthdate.day
+    ):
         years -= 1
     return years
 
@@ -421,5 +458,5 @@ class ESF551ScaleWithBodyMetrics(ESF551Scale):
         if IMPEDANCE_KEY in data.measurements:
             data.measurements |= _as_dictionary(body_metrics)
         else:
-            data.measurements['body_mass_index'] = body_metrics.body_mass_index
+            data.measurements["body_mass_index"] = body_metrics.body_mass_index
         self._original_callback(data)

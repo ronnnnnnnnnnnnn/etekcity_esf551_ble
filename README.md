@@ -15,17 +15,16 @@ This package provides a basic unofficial interface for interacting with Etekcity
 | Model | Status | Features |
 |-------|--------|----------|
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
-| ESF-24 | 🔬 Experimental | Weight, impedance, unit changes |
+| ESF-24 | 🔬 Experimental | Weight, unit changes |
 
 ## Version Status
 
-**v0.4.0-beta.3** (Pre-Release):
+**v0.4.1**:
 - ✅ ESF-551: Fully supported and stable
-- 🔬 ESF-24: Experimental support (protocol analysis ongoing)
-- ♻️ Internal: passive-scan optimisation & universal2 wheel build
-- ⚠️ Breaking changes from v0.3.x (architecture refactoring)
+- 🔬 ESF-24: Experimental support (weight only)
+- ♻️ Internal: bleak 2.x, passive-scan optimisation & universal2 wheel build
+- ⚠️ Breaking changes from v0.3.x (architecture refactoring, new scale class names)
 
-**Note**: This is a pre-release version. PyPI will not automatically suggest upgrades from stable versions (v0.3.x) to this beta version.
 
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by, or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand), or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
 
@@ -34,7 +33,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 
 ## Installation
 
-Install the package using pip:
+Requires Python 3.10+ and bleak 2.x. Install using pip:
 
 ```bash
 pip install etekcity_esf551_ble
@@ -128,11 +127,11 @@ Implementation for ESF-551 scales with full feature support.
 
 #### `ESF24Scale`
 
-Experimental implementation for ESF-24 scales (weight-only).
+Experimental implementation for ESF-24 scales (weight only).
 
 #### Common Methods:
 
-- `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], display_unit: WeightUnit = None)`
+- `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], display_unit: WeightUnit = None, scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE, adapter: str | None = None, bleak_scanner_backend: BaseBleakScanner = None, cooldown_seconds: int = 0, logger: logging.Logger | None = None)`
 - `async_start()`: Start scanning for and connecting to the scale.
 - `async_stop()`: Stop the connection to the scale.
 
@@ -144,11 +143,11 @@ Experimental implementation for ESF-24 scales (weight-only).
 
 ### `ESF551ScaleWithBodyMetrics`
 
-An extended version of ESF551Scale that automatically calculates body metrics.
+An extended version of ESF551Scale that automatically calculates body metrics when impedance is available. Body metrics (except BMI) are only added when the scale reports impedance.
 
 #### Methods:
 
-- `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], sex: Sex, birthdate: date, height_m: float, display_unit: WeightUnit = None)`
+- `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], sex: Sex, birthdate: date, height_m: float, display_unit: WeightUnit = None, scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE, adapter: str | None = None, bleak_scanner_backend: BaseBleakScanner = None, cooldown_seconds: int = 0, logger: logging.Logger | None = None)`
 - `async_start()`: Start scanning for and connecting to the scale.
 - `async_stop()`: Stop the connection to the scale.
 
@@ -211,9 +210,18 @@ An enum representing biological sex for body composition calculations:
 - `Sex.Male`
 - `Sex.Female`
 
+### `BluetoothScanningMode`
+
+Enum for BLE scanning mode (Linux only; other platforms use active scanning):
+
+- `BluetoothScanningMode.ACTIVE` (default)
+- `BluetoothScanningMode.PASSIVE`
+
 
 ## Compatibility
 
+- Python 3.10+
+- bleak 2.x (`bleak>=2.0.0,<3.0.0`)
 - Tested on Mac (Apple Silicon) and Raspberry Pi 4
 - Compatibility with Windows is unknown
 
