@@ -34,7 +34,7 @@ jobs:
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: Run tests
-        run: pytest
+        run: pytest tests/
 
   publish:
     needs: [build]
@@ -74,6 +74,12 @@ jobs:
             VERSION=$(python -c "from etekcity_esf551_ble._version import __version__; print(__version__)")
             echo "VERSION=$VERSION" >> $GITHUB_ENV
           fi
+          # Check if this is a pre-release (beta, alpha, rc)
+          if [[ "$VERSION" =~ (alpha|beta|rc) ]]; then
+            echo "IS_PRERELEASE=true" >> $GITHUB_ENV
+          else
+            echo "IS_PRERELEASE=false" >> $GITHUB_ENV
+          fi
       - name: Build package
         run: python -m build
       - name: Create or Update GitHub Release
@@ -101,7 +107,8 @@ jobs:
                 repo: context.repo.repo,
                 release_id: existingRelease.id,
                 name: `Release v${process.env.VERSION}`,
-                body: `Updated release for v${process.env.VERSION}`
+                body: `Updated release for v${process.env.VERSION}`,
+                prerelease: process.env.IS_PRERELEASE === 'true'
               });
               
               core.setOutput('release_id', updatedRelease.id);
@@ -117,7 +124,7 @@ jobs:
                   name: `Release v${process.env.VERSION}`,
                   body: `Release for v${process.env.VERSION}`,
                   draft: false,
-                  prerelease: false
+                  prerelease: process.env.IS_PRERELEASE === 'true'
                 });
                 
                 core.setOutput('release_id', newRelease.id);
@@ -140,7 +147,7 @@ jobs:
           python -m venv test-env
           . test-env/bin/activate
           pip install etekcity_esf551_ble==$VERSION
-          python -c "from etekcity_esf551_ble import EtekcitySmartFitnessScale, WeightUnit; print(EtekcitySmartFitnessScale, WeightUnit)"
+          python -c "from etekcity_esf551_ble import EtekcitySmartFitnessScale, WeightUnit; print('Import successful:', EtekcitySmartFitnessScale, WeightUnit)"
       - name: Upload Release Assets
         uses: actions/github-script@v6
         with:

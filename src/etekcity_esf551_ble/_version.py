@@ -1,14 +1,13 @@
-__version__ = "0.3.12"
+__version__ = "0.4.0-beta.5"
 
-def _parse_version_info(version_str: str) -> tuple:
-    """Parse version string into tuple of integers, handling post-release versions."""
+def _parse_version_info(version_str: str) -> tuple[int, ...]:
+    """Parse version string into tuple of integers, handling suffixes."""
     import re
-    # Remove version suffixes (post, dev, alpha, beta, rc, etc.) and local version identifiers
-    # Examples: "0.3.2.post1" -> "0.3.2", "1.2.3.dev0" -> "1.2.3", "2.0.0+local" -> "2.0.0"
-    base_version = re.sub(r'\.(post|dev|a|alpha|b|beta|rc|c|pre|preview)\d+.*$', '', version_str)
-    base_version = base_version.split('+')[0]  # Remove local version identifier
-    # Split by '.' and convert to integers
-    parts = base_version.split('.')
-    return tuple(map(int, parts))
+
+    base_version = version_str.split('+')[0]
+    match = re.match(r'^(\d+(?:\.\d+)*)', base_version)
+    if not match:
+        return tuple()
+    return tuple(int(part) for part in match.group(1).split('.'))
 
 __version_info__ = _parse_version_info(__version__)

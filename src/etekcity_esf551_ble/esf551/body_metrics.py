@@ -7,13 +7,13 @@ from math import floor
 
 from bleak.backends.scanner import BaseBleakScanner
 
-from .const import IMPEDANCE_KEY, WEIGHT_KEY
-from .parser import (
+from ..const import IMPEDANCE_KEY, WEIGHT_KEY
+from ..parser import (
     BluetoothScanningMode,
-    EtekcitySmartFitnessScale,
     ScaleData,
     WeightUnit,
 )
+from .parser import ESF551Scale
 
 
 class Sex(IntEnum):
@@ -343,11 +343,11 @@ def _as_dictionary(obj: BodyMetrics) -> dict[str, int | float]:
     return {prop: getattr(obj, prop) for prop in dir(obj) if not prop.startswith("__")}
 
 
-class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
+class ESF551ScaleWithBodyMetrics(ESF551Scale):
     """
-    Extended Etekcity Smart Fitness Scale interface with body metrics calculations.
+    Extended ESF-551 scale implementation with body metrics calculations.
 
-    This class extends the basic scale interface to automatically calculate
+    This class extends the ESF-551 scale implementation to automatically calculate
     body composition metrics based on the user's profile (sex, age, height)
     and the measurements from the scale (weight, impedance).
 
@@ -392,6 +392,8 @@ class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
         self._birthdate = birthdate
         self._height_m = height_m
         self._original_callback = notification_callback
+
+        # Initialize the parent ESF551Scale
         super().__init__(
             address,
             lambda data: self._wrapped_notification_callback(
@@ -419,5 +421,5 @@ class EtekcitySmartFitnessScaleWithBodyMetrics(EtekcitySmartFitnessScale):
         if IMPEDANCE_KEY in data.measurements:
             data.measurements |= _as_dictionary(body_metrics)
         else:
-            data.measurements["body_mass_index"] = body_metrics.body_mass_index
+            data.measurements['body_mass_index'] = body_metrics.body_mass_index
         self._original_callback(data)
