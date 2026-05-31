@@ -22,7 +22,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 **v0.4.1**:
 - ✅ ESF-551: Fully supported and stable
 - 🔬 ESF-24: Experimental support (weight only)
-- ♻️ Internal: bleak 2.x, passive-scan optimisation & universal2 wheel build
+- ♻️ Internal: bleak 2.x/3.x, passive-scan optimisation & universal2 wheel build
 - ⚠️ Breaking changes from v0.3.x (architecture refactoring, new scale class names)
 
 
@@ -33,7 +33,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 
 ## Installation
 
-Requires Python 3.10+ and bleak 2.x. Install using pip:
+Requires Python 3.10+ and bleak 2.x or 3.x. Install using pip:
 
 ```bash
 pip install etekcity_esf551_ble
@@ -221,7 +221,7 @@ Enum for BLE scanning mode (Linux only; other platforms use active scanning):
 ## Compatibility
 
 - Python 3.10+
-- bleak 2.x (`bleak>=2.0.0,<3.0.0`)
+- bleak 2.x or 3.x (`bleak>=2.0.0,<4.0.0`)
 - Tested on Mac (Apple Silicon) and Raspberry Pi 4
 - Compatibility with Windows is unknown
 

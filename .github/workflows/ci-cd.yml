@@ -18,6 +18,7 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
+        bleak-floor: ["latest", "v2"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -29,6 +30,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install hatch flake8 pytest pytest-asyncio
           pip install .
+      - name: Pin bleak 2.x floor
+        if: matrix.bleak-floor == 'v2'
+        run: pip install 'bleak>=2.0.0,<3.0.0' 'bleak_retry_connector>=3.0.0,<4.0.0'
       - name: Lint with flake8
         run: |
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
