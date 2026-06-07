@@ -7,6 +7,7 @@ from .const import (
     WEIGHT_KEY,
 )
 from .esf24 import ESF24Scale
+from .fit8s import FIT8SScale
 from .parser import (
     BluetoothScanningMode,
     EtekcitySmartFitnessScale,
@@ -20,6 +21,7 @@ __all__ = [
     "EtekcitySmartFitnessScale",
     "ESF551Scale",
     "ESF24Scale",
+    "FIT8SScale",
     "ESF551ScaleWithBodyMetrics",
     "WeightUnit",
     "ScaleData",
