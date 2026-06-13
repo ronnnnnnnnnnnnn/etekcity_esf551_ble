@@ -6,8 +6,8 @@ from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 
-from ..const import IMPEDANCE_KEY, WEIGHT_KEY
-from ..parser import EtekcitySmartFitnessScale, ScaleData
+from ..const import DISPLAY_UNIT_KEY, IMPEDANCE_KEY, WEIGHT_KEY
+from ..parser import EtekcitySmartFitnessScale, ScaleData, WeightUnit
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,7 +26,8 @@ def parse(payload: bytearray, address: str = "") -> dict[str, float | int] | Non
       [10:13] : weight in grams, 3-byte little-endian int
       [13:15] : bioelectrical impedance in ohms, 2-byte little-endian int (0 = not measured)
       [15]    : stability flag (0x01 = stable reading)
-      [16:20] : unknown/constant
+      [16]    : display unit (0x00=kg, 0x01=lb, 0x02=st)
+      [17:20] : unknown/constant
 
     Args:
         payload: 20-byte manufacturer data value from bleak.
@@ -34,8 +35,8 @@ def parse(payload: bytearray, address: str = "") -> dict[str, float | int] | Non
                  When provided, the embedded MAC in bytes 1–6 is validated.
 
     Returns:
-        dict with "weight" in kg and optionally "impedance" in ohms,
-        or None if the payload is invalid or the reading is not yet stable.
+        dict with "weight" in kg, "display_unit" (int), and optionally
+        "impedance" in ohms, or None if the payload is invalid or unstable.
     """
     if len(payload) != _PAYLOAD_LENGTH:
         return None
@@ -46,7 +47,10 @@ def parse(payload: bytearray, address: str = "") -> dict[str, float | int] | Non
     if payload[_STABILITY_BYTE_INDEX] != 0x01:
         return None
     weight_grams = int.from_bytes(payload[10:13], "little")
-    result: dict[str, float | int] = {WEIGHT_KEY: round(weight_grams / 1000, 3)}
+    result: dict[str, float | int] = {
+        WEIGHT_KEY: round(weight_grams / 1000, 2),
+        DISPLAY_UNIT_KEY: int(payload[16]),
+    }
     if impedance := int.from_bytes(payload[13:15], "little"):
         result[IMPEDANCE_KEY] = impedance
     return result
@@ -83,6 +87,8 @@ class FIT8SScale(EtekcitySmartFitnessScale):
                 scale_data = ScaleData()
                 scale_data.name = ble_device.name or "FIT8S"
                 scale_data.address = ble_device.address
+                scale_data.display_unit = WeightUnit(parsed.pop(DISPLAY_UNIT_KEY))
+                self._display_unit = scale_data.display_unit
                 scale_data.measurements = parsed
                 self._notification_callback(scale_data)
                 return
