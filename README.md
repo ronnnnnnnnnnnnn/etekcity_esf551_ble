@@ -1,11 +1,12 @@
-# Etekcity ESF-551 & ESF-24 BLE
+# Etekcity ESF-551, ESF-24 & FIT8S BLE
 
-This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports both the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551) and [Etekcity ESF-24](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf24) models.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf24), and FIT8S models.
 
 ## Features
 
 - **ESF-551**: Full feature support including weight, impedance, body metrics and display unit management
 - **ESF-24**: Experimental support
+- **FIT8S**: Advertisement-based support (weight and impedance, no GATT connection required)
 - Easy connection and notification handling
 - Body metrics calculations (ESF-551 only)
 - Display unit management
@@ -16,6 +17,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 |-------|--------|----------|
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
 | ESF-24 | 🔬 Experimental | Weight, unit changes |
+| FIT8S | 🔬 Experimental | Weight, impedance (passive advertisement scanning) |
 
 ## Version Status
 
@@ -108,6 +110,10 @@ scale = ESF551Scale(address, callback)
 # ESF-24 (experimental)
 from etekcity_esf551_ble import ESF24Scale
 scale = ESF24Scale(address, callback)
+
+# FIT8S (experimental, advertisement-based — no GATT connection)
+from etekcity_esf551_ble import FIT8SScale
+scale = FIT8SScale(address, callback)
 ```
 
 For a real-life usage example of this library, check out the [Etekcity Fitness Scale BLE Integration for Home Assistant](https://github.com/ronnnnnnnnnnnnn/etekcity_fitness_scale_ble).
@@ -128,6 +134,10 @@ Implementation for ESF-551 scales with full feature support.
 #### `ESF24Scale`
 
 Experimental implementation for ESF-24 scales (weight only).
+
+#### `FIT8SScale`
+
+Experimental implementation for FIT8S scales. Reads weight and impedance passively from BLE advertisement manufacturer data — no GATT connection is established.
 
 #### Common Methods:
 
