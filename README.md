@@ -6,10 +6,10 @@ This package provides a basic unofficial interface for interacting with Etekcity
 
 - **ESF-551**: Full feature support including weight, impedance, body metrics and display unit management
 - **ESF-24**: Experimental support
-- **FIT8S**: Advertisement-based support (weight and impedance, no GATT connection required)
+- **FIT8S**: Experimental support, advertisement-based (no GATT connection)
 - Easy connection and notification handling
 - Body metrics calculations (ESF-551 only)
-- Display unit management
+- Display unit management (ESF-551 and ESF-24 only, programatic display unit control isn't supported on advertisement-based scales)
 
 ## Supported Models
 
@@ -17,7 +17,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 |-------|--------|----------|
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
 | ESF-24 | 🔬 Experimental | Weight, unit changes |
-| FIT8S | 🔬 Experimental | Weight, impedance (passive advertisement scanning) |
+| FIT8S | 🔬 Experimental | Weight, impedance |
 
 ## Version Status
 
@@ -26,7 +26,6 @@ This package provides a basic unofficial interface for interacting with Etekcity
 - 🔬 ESF-24: Experimental support (weight only)
 - 🔬 FIT8S: Experimental support (weight & impedance via passive advertisement scanning)
 - ♻️ Internal: scale transport split into `GattScale` (connection-based) and `AdvertisementScale` (advertisement-based) base classes
-- ⚠️ `FIT8SScale` no longer accepts `cooldown_seconds` (it never applied to advertisement-based scales)
 
 
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by, or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand), or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
