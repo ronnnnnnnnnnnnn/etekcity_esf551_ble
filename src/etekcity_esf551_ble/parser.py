@@ -383,6 +383,19 @@ class AdvertisementScale(EtekcitySmartFitnessScale, abc.ABC):
     # Fallback device name used when the advertisement carries none.
     _model_name: str = ""
 
+    @EtekcitySmartFitnessScale.display_unit.setter
+    def display_unit(self, value):
+        # Advertisement-only scales report the unit observed in their
+        # advertisements; it cannot be commanded. Ignore writes (but log so the
+        # caller can tell why a requested unit had no effect).
+        if value is not None:
+            self._logger.debug(
+                "Ignoring display_unit=%s; %s reports the unit observed in "
+                "advertisements and cannot set it on the scale",
+                value,
+                type(self).__name__,
+            )
+
     @abc.abstractmethod
     def _parse(self, payload: bytearray) -> dict[str, float | int] | None:
         """

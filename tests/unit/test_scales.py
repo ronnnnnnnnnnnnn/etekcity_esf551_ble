@@ -173,6 +173,38 @@ async def test_fit8s_advertisement_callback_ignores_other_devices():
 
 
 @pytest.mark.asyncio
+async def test_fit8s_display_unit_is_observed_not_settable():
+    """display_unit can't be commanded on FIT8S; it reflects the advertisement."""
+    logger = Mock()
+    callback = Mock()
+    # A requested unit at construction is ignored (and logged), not stored.
+    scale = FIT8SScale(
+        _FIT8S_ADDRESS,
+        callback,
+        WeightUnit.KG,
+        bleak_scanner_backend=Mock(),
+        logger=logger,
+    )
+    assert scale.display_unit is None
+    assert logger.debug.called
+
+    # After a reading, the getter reflects the unit observed in the advert (LB).
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = _FIT8S_ADDRESS
+    ble_device.name = "Fit 8S"
+    advertisement_data = Mock()
+    advertisement_data.manufacturer_data = {0x1234: _FIT8S_STABLE_LB}
+    await scale._advertisement_callback(ble_device, advertisement_data)
+    assert scale.display_unit == WeightUnit.LB
+
+    # A later set is still ignored; the observed unit stands.
+    logger.debug.reset_mock()
+    scale.display_unit = WeightUnit.ST
+    assert scale.display_unit == WeightUnit.LB
+    assert logger.debug.called
+
+
+@pytest.mark.asyncio
 async def test_advertisement_callback_cooldown():
     with patch(
         "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
