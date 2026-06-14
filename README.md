@@ -21,11 +21,12 @@ This package provides a basic unofficial interface for interacting with Etekcity
 
 ## Version Status
 
-**v0.4.1**:
+**v0.5.0**:
 - ✅ ESF-551: Fully supported and stable
 - 🔬 ESF-24: Experimental support (weight only)
-- ♻️ Internal: bleak 2.x/3.x, passive-scan optimisation & universal2 wheel build
-- ⚠️ Breaking changes from v0.3.x (architecture refactoring, new scale class names)
+- 🔬 FIT8S: Experimental support (weight & impedance via passive advertisement scanning)
+- ♻️ Internal: scale transport split into `GattScale` (connection-based) and `AdvertisementScale` (advertisement-based) base classes
+- ⚠️ `FIT8SScale` no longer accepts `cooldown_seconds` (it never applied to advertisement-based scales)
 
 
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by, or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand), or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
@@ -123,9 +124,25 @@ For a real-life usage example of this library, check out the [Etekcity Fitness S
 
 ### Scale Classes
 
+The scale classes form a small hierarchy by transport:
+
+```
+EtekcitySmartFitnessScale (abstract: scanning + lifecycle + callback)
+├── GattScale (abstract: GATT connection + cooldown_seconds) → ESF551Scale, ESF24Scale
+└── AdvertisementScale (abstract: reads advertisements; unit observed-only) → FIT8SScale
+```
+
 #### `EtekcitySmartFitnessScale` (Abstract Base)
 
-Abstract base class for all scale implementations.
+Transport-agnostic base shared by every model: BLE scanning, lifecycle (`async_start` / `async_stop`), the notification callback, and the `display_unit` / `hw_version` / `sw_version` properties.
+
+#### `GattScale` (Abstract)
+
+Base for scales that deliver measurements over a GATT connection. Adds the connection lifecycle and the `cooldown_seconds` option. Subclassed by `ESF551Scale` and `ESF24Scale`.
+
+#### `AdvertisementScale` (Abstract)
+
+Base for scales that read measurements passively from BLE advertisements, with no GATT connection. Subclassed by `FIT8SScale`. On these scales `display_unit` is observed from the advertisement and cannot be set.
 
 #### `ESF551Scale`
 
@@ -141,13 +158,14 @@ Experimental implementation for FIT8S scales. Reads weight and impedance passive
 
 #### Common Methods:
 
-- `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], display_unit: WeightUnit = None, scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE, adapter: str | None = None, bleak_scanner_backend: BaseBleakScanner = None, cooldown_seconds: int = 0, logger: logging.Logger | None = None)`
-- `async_start()`: Start scanning for and connecting to the scale.
-- `async_stop()`: Stop the connection to the scale.
+- `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], display_unit: WeightUnit = None, scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE, adapter: str | None = None, bleak_scanner_backend: BaseBleakScanner = None, logger: logging.Logger | None = None)`
+  - GATT-based scales (`ESF551Scale`, `ESF24Scale`) additionally accept `cooldown_seconds: int = 0` — ignore advertisements for that many seconds after a disconnection. It does not apply to advertisement-based scales such as `FIT8SScale`.
+- `async_start()`: Start scanning for the scale (GATT-based models connect on detection).
+- `async_stop()`: Stop scanning and disconnect.
 
 #### Common Properties:
 
-- `display_unit`: Get or set the display unit (WeightUnit.KG, WeightUnit.LB or WeightUnit.ST). Returns None if the display unit is currently unknown (not set by the user and not yet received from the scale together with a stable weight measurement).
+- `display_unit`: Get or set the display unit (WeightUnit.KG, WeightUnit.LB or WeightUnit.ST). Returns None if the display unit is currently unknown (not set by the user and not yet received from the scale together with a stable weight measurement). On advertisement-based scales (`FIT8SScale`) the unit is observed from the advertisement and is read-only — assignments are ignored.
 - `hw_version`: Get the hardware version of the scale (read-only).
 - `sw_version`: Get the software version of the scale (read-only).
 
