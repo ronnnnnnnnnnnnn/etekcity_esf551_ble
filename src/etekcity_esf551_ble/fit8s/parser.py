@@ -1,18 +1,11 @@
 """FIT8S scale implementation (advertisement-based)."""
 
-import logging
-
-from bleak.backends.characteristic import BleakGATTCharacteristic
-from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import AdvertisementData
-
 from ..const import DISPLAY_UNIT_KEY, IMPEDANCE_KEY, WEIGHT_KEY
-from ..parser import EtekcitySmartFitnessScale, ScaleData, WeightUnit
-
-_LOGGER = logging.getLogger(__name__)
+from ..parser import AdvertisementScale, WeightUnit
 
 _PAYLOAD_LENGTH = 20
 _STABILITY_BYTE_INDEX = 15
+_MAC_OCTETS = 6
 
 
 def parse(payload: bytearray, address: str = "") -> dict[str, float | int] | None:
@@ -41,7 +34,12 @@ def parse(payload: bytearray, address: str = "") -> dict[str, float | int] | Non
     if len(payload) != _PAYLOAD_LENGTH:
         return None
     if address:
-        addr_bytes = bytearray(int(b, 16) for b in address.split(":"))[::-1]
+        octets = address.split(":")
+        # On some platforms (e.g. macOS without use_bdaddr) the address is a
+        # CoreBluetooth UUID, not a MAC; skip validation rather than crash.
+        if len(octets) != _MAC_OCTETS:
+            return None
+        addr_bytes = bytearray(int(b, 16) for b in octets)[::-1]
         if bytearray(payload[1:7]) != addr_bytes:
             return None
     if payload[_STABILITY_BYTE_INDEX] != 0x01:
@@ -56,7 +54,7 @@ def parse(payload: bytearray, address: str = "") -> dict[str, float | int] | Non
     return result
 
 
-class FIT8SScale(EtekcitySmartFitnessScale):
+class FIT8SScale(AdvertisementScale):
     """
     FIT8S scale — reads weight and impedance from BLE advertisement manufacturer data.
 
@@ -64,39 +62,12 @@ class FIT8SScale(EtekcitySmartFitnessScale):
     the scale's periodic advertisements.
     """
 
-    async def _advertisement_callback(
-        self, ble_device: BLEDevice, advertisement_data: AdvertisementData
-    ) -> None:
-        if ble_device.address != self.address:
-            return
+    _model_name = "FIT8S"
 
-        for mfr_bytes in advertisement_data.manufacturer_data.values():
-            payload = bytearray(mfr_bytes)
-            _LOGGER.debug(
-                "FIT8S raw manufacturer data from %s: %s",
-                ble_device.address,
-                payload.hex(),
-            )
-            if parsed := parse(payload, self.address):
-                _LOGGER.debug(
-                    "FIT8S stable measurement from %s (%s): %s",
-                    ble_device.name,
-                    ble_device.address,
-                    parsed,
-                )
-                scale_data = ScaleData()
-                scale_data.name = ble_device.name or "FIT8S"
-                scale_data.address = ble_device.address
-                scale_data.display_unit = WeightUnit(parsed.pop(DISPLAY_UNIT_KEY))
-                self._display_unit = scale_data.display_unit
-                scale_data.measurements = parsed
-                self._notification_callback(scale_data)
-                return
+    def _parse(self, payload: bytearray) -> dict[str, float | int] | None:
+        return parse(payload, self.address)
 
-    def _notification_handler(
-        self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
-    ) -> None:
-        pass  # FIT8S uses advertisement data; GATT notifications are not used
-
-    async def _start_scale_session(self, ble_device: BLEDevice) -> None:
-        pass  # FIT8S uses advertisement data; no GATT session is needed
+    def _display_unit_for(
+        self, parsed: dict[str, float | int]
+    ) -> WeightUnit | None:
+        return WeightUnit(parsed.pop(DISPLAY_UNIT_KEY))

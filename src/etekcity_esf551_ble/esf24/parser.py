@@ -15,7 +15,7 @@ from ..const import (
 )
 from ..parser import (
     BluetoothScanningMode,
-    EtekcitySmartFitnessScale,
+    GattScale,
     ScaleData,
     WeightUnit,
 )
@@ -81,7 +81,7 @@ def parse_weight(payload: bytearray) -> dict[str, int | float | None]:
     return data
 
 
-class ESF24Scale(EtekcitySmartFitnessScale):
+class ESF24Scale(GattScale):
     """
     ESF-24 scale implementation (experimental, weight-only support).
 
@@ -116,7 +116,7 @@ class ESF24Scale(EtekcitySmartFitnessScale):
         )
         self._state_mask = 0
 
-    @EtekcitySmartFitnessScale.display_unit.setter
+    @GattScale.display_unit.setter
     def display_unit(self, value):
         if value is None:
             raise ValueError("ESF-24 requires a non-null display unit")

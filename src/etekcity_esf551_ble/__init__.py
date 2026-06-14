@@ -9,8 +9,10 @@ from .const import (
 from .esf24 import ESF24Scale
 from .fit8s import FIT8SScale
 from .parser import (
+    AdvertisementScale,
     BluetoothScanningMode,
     EtekcitySmartFitnessScale,
+    GattScale,
     ScaleData,
     WeightUnit,
 )
@@ -19,6 +21,8 @@ __all__ = [
     "__version__",
     "__version_info__",
     "EtekcitySmartFitnessScale",
+    "GattScale",
+    "AdvertisementScale",
     "ESF551Scale",
     "ESF24Scale",
     "FIT8SScale",

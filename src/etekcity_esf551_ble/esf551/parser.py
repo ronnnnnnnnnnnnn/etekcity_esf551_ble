@@ -6,7 +6,7 @@ import struct
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 
-from ..parser import EtekcitySmartFitnessScale, ScaleData, WeightUnit
+from ..parser import GattScale, ScaleData, WeightUnit
 from ..const import (
     ALIRO_CHARACTERISTIC_UUID,
     IMPEDANCE_KEY,
@@ -74,12 +74,12 @@ def build_unit_update_payload(desired_unit: int) -> bytearray:
     return payload
 
 
-class ESF551Scale(EtekcitySmartFitnessScale):
+class ESF551Scale(GattScale):
     """ESF-551 scale implementation with full feature support."""
 
     _unit_update_flag: bool = False
 
-    @EtekcitySmartFitnessScale.display_unit.setter
+    @GattScale.display_unit.setter
     def display_unit(self, value):
         if value is not None:
             self._display_unit = value

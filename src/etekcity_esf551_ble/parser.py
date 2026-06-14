@@ -90,9 +90,10 @@ class EtekcitySmartFitnessScale(abc.ABC):
     """
     Abstract base class for Etekcity Smart Fitness Scale implementations.
 
-    This class handles BLE connection, data parsing, and unit conversion
-    for Etekcity smart scales. It manages the Bluetooth connection lifecycle
-    and processes notifications from the scale.
+    Handles the parts common to every model regardless of how measurements are
+    obtained: BLE scanner setup and lifecycle, address filtering, and the
+    notification callback. Transport-specific behaviour lives in the
+    :class:`GattScale` and :class:`AdvertisementScale` subclasses.
 
     Attributes:
         address: The BLE MAC address of the scale
@@ -109,7 +110,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
-        cooldown_seconds: int = 0,
         logger: logging.Logger | None = None,
     ) -> None:
         """
@@ -118,14 +118,12 @@ class EtekcitySmartFitnessScale(abc.ABC):
         Args:
             address: Bluetooth address of the scale
             notification_callback: Function to call when weight data is received
-            display_unit: Preferred weight unit (KG, LB, or ST). If specified,
-                          the scale will be instructed to change its display unit
-                          to this value upon connection.
+            display_unit: Preferred weight unit (KG, LB, or ST). Where the model
+                          supports it, the scale is instructed to change its
+                          display unit to this value.
             scanning_mode: Mode for BLE scanning (ACTIVE or PASSIVE)
             adapter: Bluetooth adapter to use (Linux only)
             bleak_scanner_backend: Optional custom BLE scanner backend
-            cooldown_seconds: Optional cooldown period in seconds to ignore
-                              new advertisements after a disconnection.
             logger: Optional logger instance. If not provided, uses the library's
                     internal logger.
         """
@@ -135,14 +133,10 @@ class EtekcitySmartFitnessScale(abc.ABC):
         )
 
         self.address = address
-        self._client: BleakClient | None = None
         self._hw_version: str | None = None
         self._sw_version: str | None = None
-        self._initializing: bool = False
         self._display_unit: WeightUnit | None = None
         self._notification_callback = notification_callback
-        self._cooldown_seconds = cooldown_seconds
-        self._cooldown_end_time: float = 0
 
         if bleak_scanner_backend is None:
             scanner_kwargs: dict[str, Any] = {
@@ -191,6 +185,92 @@ class EtekcitySmartFitnessScale(abc.ABC):
             self._display_unit = value
 
     @abc.abstractmethod
+    async def _advertisement_callback(
+        self, ble_device: BLEDevice, advertisement_data: AdvertisementData
+    ) -> None:
+        """
+        Handle Bluetooth advertisements from the target scale.
+
+        Called by the scanner for every detected device. Implementations decide
+        what to do with an advertisement from ``self.address``: connect over GATT
+        (:class:`GattScale`) or parse the advertisement payload directly
+        (:class:`AdvertisementScale`).
+
+        Args:
+            ble_device: The detected Bluetooth device
+            advertisement_data: Advertisement data for the detected device
+        """
+
+    async def async_start(self) -> None:
+        """Start the callbacks."""
+        self._logger.debug(
+            "Starting EtekcitySmartFitnessScale for address: %s", self.address
+        )
+        try:
+            async with self._lock:
+                await self._scanner.start()
+        except Exception as ex:
+            self._logger.error("Failed to start scanner: %s", ex)
+            raise
+
+    async def async_stop(self) -> None:
+        """Stop the callbacks."""
+        self._logger.debug(
+            "Stopping EtekcitySmartFitnessScale for address: %s", self.address
+        )
+        try:
+            async with self._lock:
+                await self._scanner.stop()
+        except Exception as ex:
+            self._logger.error("Failed to stop scanner: %s", ex)
+            raise
+
+
+class GattScale(EtekcitySmartFitnessScale, abc.ABC):
+    """
+    Base class for scales that deliver measurements over a GATT connection.
+
+    On detecting the target scale's advertisement a connection is established and
+    model-specific setup runs in :meth:`_start_scale_session`; measurements then
+    arrive via :meth:`_notification_handler`. An optional cooldown period ignores
+    advertisements for a while after a disconnection.
+    """
+
+    def __init__(
+        self,
+        address: str,
+        notification_callback: Callable[[ScaleData], None],
+        display_unit: WeightUnit = None,
+        scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
+        adapter: str | None = None,
+        bleak_scanner_backend: BaseBleakScanner = None,
+        cooldown_seconds: int = 0,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """
+        Initialize the GATT scale interface.
+
+        Args:
+            cooldown_seconds: Optional cooldown period in seconds to ignore new
+                              advertisements after a disconnection.
+
+        See :meth:`EtekcitySmartFitnessScale.__init__` for the remaining args.
+        """
+        super().__init__(
+            address,
+            notification_callback,
+            display_unit,
+            scanning_mode,
+            adapter,
+            bleak_scanner_backend,
+            logger,
+        )
+        self._client: BleakClient | None = None
+        self._initializing: bool = False
+        self._cooldown_seconds = cooldown_seconds
+        self._cooldown_end_time: float = 0
+
+    @abc.abstractmethod
     def _notification_handler(
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
     ) -> None:
@@ -216,30 +296,6 @@ class EtekcitySmartFitnessScale(abc.ABC):
         notification callbacks (typically via `self._client.start_notify`).
         """
         raise NotImplementedError
-
-    async def async_start(self) -> None:
-        """Start the callbacks."""
-        self._logger.debug(
-            "Starting EtekcitySmartFitnessScale for address: %s", self.address
-        )
-        try:
-            async with self._lock:
-                await self._scanner.start()
-        except Exception as ex:
-            self._logger.error("Failed to start scanner: %s", ex)
-            raise
-
-    async def async_stop(self) -> None:
-        """Stop the callbacks."""
-        self._logger.debug(
-            "Stopping EtekcitySmartFitnessScale for address: %s", self.address
-        )
-        try:
-            async with self._lock:
-                await self._scanner.stop()
-        except Exception as ex:
-            self._logger.error("Failed to stop scanner: %s", ex)
-            raise
 
     def _unavailable_callback(self, _: BleakClient) -> None:
         """
@@ -312,3 +368,69 @@ class EtekcitySmartFitnessScale(abc.ABC):
             await self._start_scale_session(ble_device)
         finally:
             self._initializing = False
+
+
+class AdvertisementScale(EtekcitySmartFitnessScale, abc.ABC):
+    """
+    Base class for scales that broadcast measurements in their BLE
+    advertisements, with no GATT connection.
+
+    Each advertisement from the target scale is passed to :meth:`_parse`; a
+    non-``None`` result is wrapped in a :class:`ScaleData` and delivered to the
+    notification callback.
+    """
+
+    # Fallback device name used when the advertisement carries none.
+    _model_name: str = ""
+
+    @abc.abstractmethod
+    def _parse(self, payload: bytearray) -> dict[str, float | int] | None:
+        """
+        Parse a single manufacturer-data payload into a measurements dict.
+
+        Returns None if the payload is invalid or the reading is not usable
+        (e.g. not yet stable).
+        """
+
+    def _display_unit_for(
+        self, parsed: dict[str, float | int]
+    ) -> WeightUnit | None:
+        """
+        Return the unit shown on the scale's display for this reading.
+
+        Receives the dict from :meth:`_parse` and may ``pop`` a display-unit
+        entry out of it so it does not leak into ``measurements``. Defaults to
+        None ("unknown").
+        """
+        return None
+
+    async def _advertisement_callback(
+        self, ble_device: BLEDevice, advertisement_data: AdvertisementData
+    ) -> None:
+        if ble_device.address != self.address:
+            return
+
+        for mfr_bytes in advertisement_data.manufacturer_data.values():
+            payload = bytearray(mfr_bytes)
+            self._logger.debug(
+                "Raw manufacturer data from %s: %s",
+                ble_device.address,
+                payload.hex(),
+            )
+            if parsed := self._parse(payload):
+                self._logger.debug(
+                    "Stable measurement from %s (%s): %s",
+                    ble_device.name,
+                    ble_device.address,
+                    parsed,
+                )
+                display_unit = self._display_unit_for(parsed)
+                scale_data = ScaleData()
+                scale_data.name = ble_device.name or self._model_name
+                scale_data.address = ble_device.address
+                scale_data.display_unit = display_unit
+                scale_data.measurements = parsed
+                if display_unit is not None:
+                    self._display_unit = display_unit
+                self._notification_callback(scale_data)
+                return

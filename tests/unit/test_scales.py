@@ -8,7 +8,15 @@ from bleak.backends.device import BLEDevice
 from src.etekcity_esf551_ble import (
     ESF24Scale,
     ESF551Scale,
+    EtekcitySmartFitnessScale,
+    FIT8SScale,
     WeightUnit,
+)
+
+# weight 70.5 kg + impedance 500 ohms, MAC "A9:89:5D:ED:A0:63" (LE), stable, unit=LB.
+_FIT8S_ADDRESS = "A9:89:5D:ED:A0:63"
+_FIT8S_STABLE_LB = bytes(
+    b"\x01\x63\xa0\xed\x5d\x89\xa9\x00\x00\x00\x64\x13\x01\xf4\x01\x01\x01\x00\x00\x00"
 )
 
 
@@ -105,6 +113,63 @@ async def test_scale_direct_instantiation():
         # Test ESF24 direct instantiation
         esf24_scale = ESF24Scale("00:11:22:33:44:55", callback)
         assert isinstance(esf24_scale, ESF24Scale)
+
+
+@pytest.mark.asyncio
+async def test_fit8s_scale_initialization():
+    """FIT8S is an advertisement-based scale sharing the common base class."""
+    callback = Mock()
+    scale = FIT8SScale(_FIT8S_ADDRESS, callback, bleak_scanner_backend=Mock())
+
+    assert scale.address == _FIT8S_ADDRESS
+    assert scale._notification_callback == callback
+    assert isinstance(scale, EtekcitySmartFitnessScale)
+    # No GATT machinery on advertisement-based scales.
+    assert not hasattr(scale, "_cooldown_seconds")
+
+
+@pytest.mark.asyncio
+async def test_fit8s_advertisement_callback_emits_scale_data():
+    """A stable FIT8S advertisement is parsed and delivered to the callback."""
+    callback = Mock()
+    scale = FIT8SScale(_FIT8S_ADDRESS, callback, bleak_scanner_backend=Mock())
+
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = _FIT8S_ADDRESS
+    ble_device.name = "Fit 8S"
+
+    advertisement_data = Mock()
+    advertisement_data.manufacturer_data = {0x1234: _FIT8S_STABLE_LB}
+
+    await scale._advertisement_callback(ble_device, advertisement_data)
+
+    callback.assert_called_once()
+    scale_data = callback.call_args[0][0]
+    assert scale_data.measurements["weight"] == 70.5
+    assert scale_data.measurements["impedance"] == 500
+    # display_unit comes from the advertisement and is not left in measurements.
+    assert scale_data.display_unit == WeightUnit.LB
+    assert "display_unit" not in scale_data.measurements
+    assert scale.display_unit == WeightUnit.LB
+    assert scale_data.name == "Fit 8S"
+    assert scale_data.address == _FIT8S_ADDRESS
+
+
+@pytest.mark.asyncio
+async def test_fit8s_advertisement_callback_ignores_other_devices():
+    """Advertisements from a different address are ignored."""
+    callback = Mock()
+    scale = FIT8SScale(_FIT8S_ADDRESS, callback, bleak_scanner_backend=Mock())
+
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = "00:11:22:33:44:55"
+    ble_device.name = "Other"
+
+    advertisement_data = Mock()
+    advertisement_data.manufacturer_data = {0x1234: _FIT8S_STABLE_LB}
+
+    await scale._advertisement_callback(ble_device, advertisement_data)
+    callback.assert_not_called()
 
 
 @pytest.mark.asyncio
