@@ -8,6 +8,7 @@ from .const import (
 )
 from .esf24 import ESF24Scale
 from .fit8s import FIT8SScale
+from .efsa591s import EFSA591SScale, EFSA591SScaleWithBodyMetrics
 from .parser import (
     AdvertisementScale,
     BluetoothScanningMode,
@@ -27,6 +28,8 @@ __all__ = [
     "ESF24Scale",
     "FIT8SScale",
     "ESF551ScaleWithBodyMetrics",
+    "EFSA591SScale",
+    "EFSA591SScaleWithBodyMetrics",
     "WeightUnit",
     "ScaleData",
     "IMPEDANCE_KEY",
