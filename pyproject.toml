@@ -8,7 +8,7 @@ dynamic = ["version"]
 authors = [
   { name="Ron", email="ronnnnnnn@gmail.com" },
 ]
-description = "An unofficial Python package for interacting with Etekcity Smart Fitness Scales using BLE. Supports ESF-551 (full features), ESF-24 (experimental), and other Etekcity scale models. Not affiliated with Etekcity, VeSync Co., Ltd., or any of their subsidiaries."
+description = "An unofficial Python package for interacting with Etekcity Smart Fitness Scales using BLE. Supports ESF-551 (full features), ESF-24 (experimental), FIT-8S (experimental), and other Etekcity scale models. Not affiliated with Etekcity, VeSync Co., Ltd., or any of their subsidiaries."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -16,6 +16,7 @@ keywords = [
     "etekcity",
     "esf551",
     "esf24",
+    "fit8s",
     "smart scale",
     "fitness scale",
     "bluetooth",
@@ -30,6 +31,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",

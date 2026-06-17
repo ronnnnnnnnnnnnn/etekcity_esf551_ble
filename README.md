@@ -1,15 +1,15 @@
-# Etekcity ESF-551, ESF-24 & FIT8S BLE
+# Etekcity ESF-551, ESF-24 & FIT-8S BLE
 
-This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf24), and FIT8S models.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf24), and [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) models.
 
 ## Features
 
 - **ESF-551**: Full feature support including weight, impedance, body metrics and display unit management
 - **ESF-24**: Experimental support
-- **FIT8S**: Experimental support, advertisement-based (no GATT connection)
+- **FIT-8S**: Experimental support, advertisement-based (no GATT connection)
 - Easy connection and notification handling
-- Body metrics calculations (ESF-551 only)
-- Display unit management (ESF-551 and ESF-24 only, programatic display unit control isn't supported on advertisement-based scales)
+- Body composition metrics via the `BodyMetrics` calculator — works with any impedance-capable scale (ESF-551 and FIT-8S only)
+- Display unit management (ESF-551 and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
 
 ## Supported Models
 
@@ -17,14 +17,14 @@ This package provides a basic unofficial interface for interacting with Etekcity
 |-------|--------|----------|
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
 | ESF-24 | 🔬 Experimental | Weight, unit changes |
-| FIT8S | 🔬 Experimental | Weight, impedance |
+| FIT-8S | 🔬 Experimental | Weight, impedance, body metrics |
 
 ## Version Status
 
 **v0.5.0**:
 - ✅ ESF-551: Fully supported and stable
 - 🔬 ESF-24: Experimental support (weight only)
-- 🔬 FIT8S: Experimental support (weight & impedance via passive advertisement scanning)
+- 🔬 FIT-8S: Experimental support (weight & impedance via passive advertisement scanning)
 - ♻️ Internal: scale transport split into `GattScale` (connection-based) and `AdvertisementScale` (advertisement-based) base classes
 
 
@@ -65,7 +65,7 @@ async def main():
         if IMPEDANCE_KEY in data.measurements:
             print(f"Impedance: {data.measurements[IMPEDANCE_KEY]} Ω")
 
-            # Calculate body metrics (ESF-551 only)
+            # Calculate body metrics (ESF-551 and FIT-8S only)
             # Note: Replace with your actual height, age and sex
             body_metrics = BodyMetrics(
                 weight_kg=data.measurements[WEIGHT_KEY],
@@ -111,7 +111,7 @@ scale = ESF551Scale(address, callback)
 from etekcity_esf551_ble import ESF24Scale
 scale = ESF24Scale(address, callback)
 
-# FIT8S (experimental, advertisement-based — no GATT connection)
+# FIT-8S (experimental, advertisement-based — no GATT connection)
 from etekcity_esf551_ble import FIT8SScale
 scale = FIT8SScale(address, callback)
 ```
@@ -153,7 +153,7 @@ Experimental implementation for ESF-24 scales (weight only).
 
 #### `FIT8SScale`
 
-Experimental implementation for FIT8S scales. Reads weight and impedance passively from BLE advertisement manufacturer data — no GATT connection is established.
+Experimental implementation for FIT-8S scales. Reads weight and impedance passively from BLE advertisement manufacturer data — no GATT connection is established.
 
 #### Common Methods:
 
@@ -263,6 +263,11 @@ power on
 scan on
 ```
 (See https://github.com/home-assistant/core/issues/76186#issuecomment-1204954485)
+
+
+## Acknowledgments
+
+- FIT-8S protocol support contributed by [@Flautz](https://github.com/Flautz) — thank you!
 
 
 ## Support the Project
