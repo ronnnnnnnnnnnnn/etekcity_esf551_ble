@@ -4,9 +4,11 @@ ALIRO_CHARACTERISTIC_UUID = "0000fff2-0000-1000-8000-00805f9b34fb"
 DISPLAY_UNIT_KEY = "display_unit"
 WEIGHT_KEY = "weight"
 IMPEDANCE_KEY = "impedance"
+HEART_RATE_KEY = "heart_rate"
 
 __all__ = [
     "DISPLAY_UNIT_KEY",
+    "HEART_RATE_KEY",
     "IMPEDANCE_KEY",
     "WEIGHT_KEY",
 ]

@@ -13,6 +13,7 @@ from bleak.backends.scanner import BaseBleakScanner
 
 from ..const import (
     ALIRO_CHARACTERISTIC_UUID,
+    HEART_RATE_KEY,
     IMPEDANCE_KEY,
     WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
     WEIGHT_KEY,
@@ -176,6 +177,8 @@ class EFSA591SScale(GattScale):
         measurements: dict[str, float | int] = {WEIGHT_KEY: meas.weight_kg}
         if meas.impedance:
             measurements[IMPEDANCE_KEY] = meas.impedance
+        if meas.heart_rate:
+            measurements[HEART_RATE_KEY] = meas.heart_rate
         scale_data.measurements = measurements
         self._notification_callback(scale_data)
 

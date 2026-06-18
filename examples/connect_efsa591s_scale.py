@@ -18,6 +18,7 @@ from bleak import BleakScanner
 
 from etekcity_esf551_ble import EFSA591SScale, ScaleData, WeightUnit
 from etekcity_esf551_ble.const import IMPEDANCE_KEY, WEIGHT_KEY
+from etekcity_esf551_ble.efsa591s import a5_protocol as a5
 
 IMPEDANCE2_KEY = "impedance_100k"
 UserProfile = None  # legacy CLI arg compatibility; unused by encrypted client
@@ -134,6 +135,38 @@ def _dump_advertisement(adv) -> None:
     print("  ──────────────────────────────────────────────────────")
 
 
+class _FrameDumpMixin:
+    """Mix-in that prints every received frame (raw + decrypted) for protocol RE.
+
+    Used by --dump-frames to locate undocumented fields (e.g. heart rate). It
+    dumps before delegating to the normal handler, so it sees *all* opcodes,
+    including the status frames the client otherwise ignores (0x413b, etc.).
+    """
+
+    def _handle_frame(self, frame: bytes, name: str, address: str) -> None:
+        parsed = a5.parse_frame(frame)
+        if parsed is not None:
+            dec = ""
+            if parsed.channel == a5.CHANNEL_AES and self._key and self._iv:
+                try:
+                    dec = a5.decrypt_frame_payload(self._key, self._iv, parsed).hex()
+                except Exception as ex:  # pragma: no cover - diagnostic only
+                    dec = f"<decrypt failed: {ex}>"
+            print(
+                f"  [FRAME] seq=0x{parsed.seq:02x} op=0x{parsed.opcode:04x} "
+                f"ch=0x{parsed.channel:02x}  raw={frame.hex()}"
+                + (f"  dec={dec}" if dec else "")
+            )
+        super()._handle_frame(frame, name, address)
+
+
+def _make_scale(cls, **kwargs):
+    """Build the scale client, optionally wrapped with frame dumping."""
+    if kwargs.pop("_dump", False):
+        cls = type("_DumpingScale", (_FrameDumpMixin, cls), {})
+    return cls(**kwargs)
+
+
 async def main(args: argparse.Namespace) -> None:
     address = args.address
 
@@ -160,7 +193,13 @@ async def main(args: argparse.Namespace) -> None:
 
     today = date.today()
     birthdate = date(today.year - args.age, today.month, today.day)
-    scale = EFSA591SScaleWithBodyMetrics(
+    if args.dump_frames:
+        print("Frame-dump mode ON: printing raw + decrypted frames for every "
+              "packet. Stand on the scale and stay still until the reading "
+              "finishes (HR needs ~20-30 s), then step off and Ctrl+C.\n")
+    scale = _make_scale(
+        EFSA591SScaleWithBodyMetrics,
+        _dump=args.dump_frames,
         address=address,
         notification_callback=on_measurement,
         sex=Sex.Female if args.female else Sex.Male,
@@ -196,6 +235,9 @@ if __name__ == "__main__":
                         help="Set biological sex to female")
     parser.add_argument("--debug", action="store_true",
                         help="Enable verbose BLE debug logging")
+    parser.add_argument("--dump-frames", action="store_true",
+                        help="Print raw + decrypted hex of every frame "
+                             "(for protocol reverse-engineering, e.g. heart rate)")
     parser.add_argument("--log", action="store_true",
                         help="Capture all TX/RX packets + GATT table to a "
                              "timestamped .jsonl file for offline analysis")

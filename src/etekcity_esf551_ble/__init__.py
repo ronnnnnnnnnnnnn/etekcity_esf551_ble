@@ -3,6 +3,7 @@ from .esf551 import ESF551Scale, ESF551ScaleWithBodyMetrics
 from .esf551.body_metrics import BodyMetrics, Sex
 from .const import (
     DISPLAY_UNIT_KEY,
+    HEART_RATE_KEY,
     IMPEDANCE_KEY,
     WEIGHT_KEY,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "EFSA591SScaleWithBodyMetrics",
     "WeightUnit",
     "ScaleData",
+    "HEART_RATE_KEY",
     "IMPEDANCE_KEY",
     "WEIGHT_KEY",
     "BodyMetrics",

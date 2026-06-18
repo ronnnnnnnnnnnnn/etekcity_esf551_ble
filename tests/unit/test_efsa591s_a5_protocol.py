@@ -144,3 +144,12 @@ class TestResultFrame:
         assert m.weight_kg == 111.25
         assert m.impedance == 424
         assert m.final is True
+        assert m.heart_rate == 88  # byte[36] = 0x58
+
+    def test_parse_result_heart_rate_zero_is_none(self):
+        # byte[36] == 0 means HR not measured (stepped off early / not barefoot)
+        pt = bytearray(self.RESULT_PT)
+        pt[36] = 0
+        m = p.parse_result(bytes(pt))
+        assert m is not None
+        assert m.heart_rate is None
