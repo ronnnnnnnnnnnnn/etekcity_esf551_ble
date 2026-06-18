@@ -28,6 +28,10 @@ from . import a5_protocol as a5
 
 _LOGGER = logging.getLogger(__name__)
 
+# Frames the scale emits that carry no data we use (status/flag/ack frames).
+# Ignored silently so they don't spam the debug log.
+_STATUS_OPCODES = frozenset({0x4202, 0x4420, 0x413b, 0x413d, 0x4434, 0x4436})
+
 
 class EFSA591SScale(GattScale):
     """
@@ -52,7 +56,6 @@ class EFSA591SScale(GattScale):
         self._dh: a5.DHParams | None = None
         self._key: bytes | None = None
         self._iv: bytes | None = None
-        self._last_weight: float | None = None
 
     def _next_seq(self) -> int:
         self._seq = (self._seq + 1) & 0xFF
@@ -114,7 +117,8 @@ class EFSA591SScale(GattScale):
         name: str,
         address: str,
     ) -> None:
-        for frame in self._reasm.feed(bytes(data)):
+        # data is a bytearray; FrameReassembler.feed iterates it, so no copy needed.
+        for frame in self._reasm.feed(data):
             try:
                 self._handle_frame(frame, name, address)
             except Exception as ex:  # pragma: no cover - defensive
@@ -138,24 +142,31 @@ class EFSA591SScale(GattScale):
             )
             asyncio.ensure_future(self._send_frame(verify))
 
-        elif parsed.opcode in (a5.OPCODE_MEASUREMENT, a5.OPCODE_RESULT):
+        elif parsed.opcode == a5.OPCODE_RESULT:
+            # Only the final result frame carries the stabilized weight plus
+            # impedance. We deliberately apply ONLY this frame and ignore the
+            # live OPCODE_MEASUREMENT stream below: those intermediate frames
+            # carry an unstable, weight-only reading that would otherwise flood
+            # history and overwrite the final body-composition values (a live
+            # frame arriving after the result frame resets impedance to
+            # "unavailable").
             if not self._key or not self._iv:
                 return
             pt = a5.decrypt_frame_payload(self._key, self._iv, parsed)
-            if parsed.opcode == a5.OPCODE_RESULT:
-                meas = a5.parse_result(pt)
-            else:
-                meas = a5.parse_measurement(pt)
+            meas = a5.parse_result(pt)
             if meas is None or meas.weight_kg <= 0:
                 return
             self._emit(meas, name, address)
-        else:
+        elif parsed.opcode == a5.OPCODE_MEASUREMENT:
+            # Live, pre-stabilization weight stream - intentionally ignored so
+            # only the finalized measurement is delivered to Home Assistant.
+            return
+        elif parsed.opcode not in _STATUS_OPCODES:
             _LOGGER.debug(
                 "EFS-A591S unhandled opcode 0x%04x: %s", parsed.opcode, frame.hex()
             )
 
     def _emit(self, meas: a5.Measurement, name: str, address: str) -> None:
-        self._last_weight = meas.weight_kg
         scale_data = ScaleData()
         scale_data.name = name
         scale_data.address = address

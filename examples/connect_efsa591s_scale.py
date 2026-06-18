@@ -100,8 +100,8 @@ async def scan_for_scale() -> str | None:
         if (any(h.upper() in name for h in SCALE_NAME_HINTS)
                 or SCALE_SERVICE in services
                 or ETEKCITY_MFR_ID in adv.manufacturer_data):
-            print(f"  Found: {dev.name or '?'} [{dev.address}]  "
-                  f"(mfr={', '.join(f'0x{k:04x}' for k in adv.manufacturer_data) or '-'})")
+            print(f"  Found: {dev.name or '?'} [{dev.address}]")
+            _dump_advertisement(adv)   # full payload, to identify the model
             return dev.address
 
     # Fall back to a device list to pick from.
@@ -109,13 +109,29 @@ async def scan_for_scale() -> str | None:
           "(strongest signal first):\n")
     rows = sorted(devices.values(), key=lambda da: -(da[1].rssi or -999))
     for dev, adv in rows:
-        mfr = ", ".join(f"0x{k:04x}" for k in adv.manufacturer_data) or "-"
+        mfr = _fmt_mfr(adv)
         print(f"  {dev.address}   rssi={adv.rssi:>4} dBm   "
-              f"name={(dev.name or '(none)'):<26} mfr={mfr}")
-    print("\nFind your scale above (likely the strongest signal when you're next "
-          "to it, often with no name), then re-run with its address:\n"
+              f"name={(dev.name or '(none)'):<26} mfr=[{mfr}]")
+    print("\nFind your scale above, then re-run with its address:\n"
           "  python connect_efsa591s_scale.py <ADDRESS> --lb")
     return None
+
+
+def _fmt_mfr(adv) -> str:
+    """Format manufacturer data as 'company_id=hexbytes' pairs."""
+    return ", ".join(f"0x{k:04x}={v.hex()}" for k, v in adv.manufacturer_data.items()) or "-"
+
+
+def _dump_advertisement(adv) -> None:
+    """Print the full advertisement payload (for model identification)."""
+    print("  ── advertisement details (for model identification) ──")
+    print(f"    manufacturer_data: {_fmt_mfr(adv)}")
+    svc_uuids = ", ".join(str(u) for u in adv.service_uuids) or "-"
+    print(f"    service_uuids    : {svc_uuids}")
+    svc_data = ", ".join(f"{u}={d.hex()}" for u, d in adv.service_data.items()) or "-"
+    print(f"    service_data     : {svc_data}")
+    print(f"    tx_power         : {adv.tx_power}")
+    print("  ──────────────────────────────────────────────────────")
 
 
 async def main(args: argparse.Namespace) -> None:
