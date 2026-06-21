@@ -164,3 +164,10 @@ src/.DS_Store
 .DS_Store
 
 test-esf551.py
+
+# --- Local-only working directories (do NOT commit) ---
+exploration_bin/
+.secrets/
+# Captures containing personal data (device MAC, weight readings)
+btsnoop_hci.log*
+*.jsonl
