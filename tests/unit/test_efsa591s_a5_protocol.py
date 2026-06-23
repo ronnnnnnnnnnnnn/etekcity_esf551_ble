@@ -145,6 +145,15 @@ class TestResultFrame:
         assert m.impedance == 424
         assert m.final is True
         assert m.heart_rate == 88  # byte[36] = 0x58
+        assert m.display_unit == 1  # byte[35] = 0x01 = lb (capture was in lb)
+
+    def test_parse_result_display_unit_mapping(self):
+        # byte[35] encodes the scale's display unit: 0=kg, 1=lb, 2=st; other => None
+        # (confirmed by kg-vs-lb capture diff: byte[35] flips 1->0, bytes 33/34 constant)
+        for raw, expected in ((0, 0), (1, 1), (2, 2), (7, None)):
+            pt = bytearray(self.RESULT_PT)
+            pt[35] = raw
+            assert p.parse_result(bytes(pt)).display_unit == expected
 
     def test_parse_result_heart_rate_zero_is_none(self):
         # byte[36] == 0 means HR not measured (stepped off early / not barefoot)

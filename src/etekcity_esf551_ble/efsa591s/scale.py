@@ -173,7 +173,13 @@ class EFSA591SScale(GattScale):
         scale_data.address = address
         scale_data.hw_version = self.hw_version or ""
         scale_data.sw_version = self.sw_version or ""
-        scale_data.display_unit = self._display_unit
+        # Prefer the unit the scale actually displayed this reading in (from the
+        # result frame); fall back to the client-configured unit if absent.
+        scale_data.display_unit = (
+            WeightUnit(meas.display_unit)
+            if meas.display_unit is not None
+            else self._display_unit
+        )
         measurements: dict[str, float | int] = {WEIGHT_KEY: meas.weight_kg}
         if meas.impedance:
             measurements[IMPEDANCE_KEY] = meas.impedance

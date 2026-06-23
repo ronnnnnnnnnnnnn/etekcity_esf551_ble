@@ -257,6 +257,7 @@ class Measurement(NamedTuple):
     final: bool            # True for the 0x443a result frame
     raw: bytes
     heart_rate: int | None = None  # bpm, present on the final result once measured
+    display_unit: int | None = None  # unit shown on the scale: 0=kg, 1=lb, 2=st
 
 
 def decrypt_frame_payload(key: bytes, iv: bytes, parsed: ParsedFrame) -> bytes:
@@ -287,13 +288,21 @@ def parse_result(plaintext: bytes) -> Measurement | None:
 
     Layout (38 bytes): [0:8]=serial ascii, [8:20]=name, [20:22]=00,
     [22:25]=weight grams (uint24 LE) /1000 kg, [25:27]=impedance (uint16 LE) ohms,
-    [29:33]=timestamp, [36]=heart rate (bpm, 0 until measured).
+    [29:33]=timestamp, [35]=display unit (0=kg, 1=lb, 2=st),
+    [36]=heart rate (bpm, 0 until measured).
     """
     if len(plaintext) < 33:
         return None
     weight = int.from_bytes(plaintext[22:25], "little") / 1000.0
     impedance = struct.unpack("<H", plaintext[25:27])[0]
     timestamp = struct.unpack("<I", plaintext[29:33])[0]
+    # Display unit the scale showed this reading in. Same encoding as the ESF-551
+    # (0=kg, 1=lb, 2=st). Confirmed at byte[35] by a kg-vs-lb capture diff (it
+    # flips 1->0 between lb and kg while bytes 33/34 stay constant). Only 0/1/2
+    # are accepted; anything else is treated as "unknown".
+    display_unit = plaintext[35] if len(plaintext) >= 36 else None
+    if display_unit not in (0, 1, 2):
+        display_unit = None
     # Heart rate is one byte near the end of the frame; 0 means "not measured"
     # (e.g. user stepped off before it locked, or not barefoot on the electrodes).
     heart_rate = plaintext[36] if len(plaintext) >= 37 and plaintext[36] else None
@@ -302,4 +311,5 @@ def parse_result(plaintext: bytes) -> Measurement | None:
         impedance=impedance if 0 < impedance < 60000 else None,
         timestamp=timestamp, final=True, raw=plaintext,
         heart_rate=heart_rate,
+        display_unit=display_unit,
     )
