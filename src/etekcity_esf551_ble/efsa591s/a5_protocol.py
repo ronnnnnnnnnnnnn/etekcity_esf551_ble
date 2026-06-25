@@ -40,6 +40,7 @@ OPCODE_KEY_EXCHANGE = 0x4201   # OP_HIGH_SECURITY_KEY_EXCHANGE
 OPCODE_KEY_VERIFY = 0x4202     # OP_HIGH_SECURITY_KEY_VERIFY
 OPCODE_MEASUREMENT = 0x4421    # live weight push (resource 21 44 00)
 OPCODE_RESULT = 0x443a         # final result: weight + impedance (resource 3a 44 00)
+OPCODE_SET_UNIT = 0xa163       # config: set the scale's display unit (0=kg, 1=lb, 2=st)
 
 CHANNEL_PLAINTEXT = 0x00
 CHANNEL_AES = 0x01             # the AES-encrypted measurement channel
@@ -242,6 +243,21 @@ def build_key_verify(seq: int, mac: str, iv: bytes, key: bytes) -> bytes:
     inner = bytes([0x0C]) + rmac + bytes([len(iv)]) + iv
     ciphertext = _aes_cbc_encrypt(key, bytes(16), _pkcs7_pad(inner))
     return build_frame(seq, OPCODE_KEY_VERIFY, ciphertext, CHANNEL_AES)
+
+
+def build_set_unit(seq: int, unit: int, key: bytes, iv: bytes) -> bytes:
+    """
+    Build a display-unit change command (resource 0xa163).
+
+    The plaintext payload is a single byte = the desired unit (0=kg, 1=lb, 2=st),
+    AES-CBC/PKCS7 encrypted with the session (key, iv) and sent on the AES channel
+    to FFF2 — captured from the app, which writes exactly this on connect and on
+    any unit toggle.
+    """
+    if unit not in (0, 1, 2):
+        raise ValueError(f"unit must be 0 (kg), 1 (lb) or 2 (st); got {unit}")
+    ciphertext = _aes_cbc_encrypt(key, iv, _pkcs7_pad(bytes([unit])))
+    return build_frame(seq, OPCODE_SET_UNIT, ciphertext, CHANNEL_AES)
 
 
 def random_iv() -> bytes:

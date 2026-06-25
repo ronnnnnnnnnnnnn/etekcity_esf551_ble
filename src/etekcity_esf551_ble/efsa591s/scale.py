@@ -111,6 +111,15 @@ class EFSA591SScale(GattScale):
         if self._client and self._write_char:
             await self._client.write_gatt_char(self._write_char, frame, response=False)
 
+    async def _send_verify_then_unit(
+        self, verify: bytes, unit_frame: bytes | None
+    ) -> None:
+        # VERIFY establishes the session; the unit command reuses the same key/iv,
+        # so it must go out after VERIFY (and only if a unit is configured).
+        await self._send_frame(verify)
+        if unit_frame is not None:
+            await self._send_frame(unit_frame)
+
     def _notification_handler(
         self,
         _: BleakGATTCharacteristic,
@@ -141,7 +150,15 @@ class EFSA591SScale(GattScale):
             verify = a5.build_key_verify(
                 self._next_seq(), self.address, self._iv, self._key
             )
-            asyncio.ensure_future(self._send_frame(verify))
+            # Push the configured display unit right after VERIFY, the same way
+            # the app does on connect (resource 0xa163, encrypted with the session
+            # key/iv). Skipped when no unit is configured.
+            unit_frame = None
+            if self._display_unit is not None:
+                unit_frame = a5.build_set_unit(
+                    self._next_seq(), int(self._display_unit), self._key, self._iv
+                )
+            asyncio.ensure_future(self._send_verify_then_unit(verify, unit_frame))
 
         elif parsed.opcode == a5.OPCODE_RESULT:
             # Only the final result frame carries the stabilized weight plus
