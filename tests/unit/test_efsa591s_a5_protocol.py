@@ -145,6 +145,15 @@ class TestResultFrame:
         assert m.impedance == 424
         assert m.final is True
         assert m.heart_rate == 88  # byte[36] = 0x58
+        assert m.display_unit == 1  # byte[35] = 0x01 = lb (capture was in lb)
+
+    def test_parse_result_display_unit_mapping(self):
+        # byte[35] encodes the scale's display unit: 0=kg, 1=lb, 2=st; other => None
+        # (confirmed by kg-vs-lb capture diff: byte[35] flips 1->0, bytes 33/34 constant)
+        for raw, expected in ((0, 0), (1, 1), (2, 2), (7, None)):
+            pt = bytearray(self.RESULT_PT)
+            pt[35] = raw
+            assert p.parse_result(bytes(pt)).display_unit == expected
 
     def test_parse_result_heart_rate_zero_is_none(self):
         # byte[36] == 0 means HR not measured (stepped off early / not barefoot)
@@ -153,3 +162,34 @@ class TestResultFrame:
         m = p.parse_result(bytes(pt))
         assert m is not None
         assert m.heart_rate is None
+
+
+class TestSetUnit:
+    # Ground truth captured from the app (Frida): channel-1 session key/iv and the
+    # exact ciphertext the app's AES doFinal produced for each unit's 0xa163 write.
+    KEY = bytes.fromhex("c7780d30ff1e531cd89258386b4b9b0b")
+    IV = bytes.fromhex("bdbd7f418b52652c4fc29552736b1051")
+    CIPHERTEXT = {
+        0: "7b31dfe6f1db7baf68402299cbd934c0",  # kg
+        1: "2f8010a5274df10d308c1544cda350c5",  # lb
+        2: "6e06d4ad2e18dda2c0791628258cec91",  # st
+    }
+    # Full lb frame at seq 0x03 captured verbatim from the app's FFF2 write
+    # (validates flags + checksum + framing end to end).
+    LB_FRAME = "a523031500a90163a100012f8010a5274df10d308c1544cda350c5"
+
+    def test_build_set_unit_ciphertext_matches_app(self):
+        for unit, ct in self.CIPHERTEXT.items():
+            parsed = p.parse_frame(p.build_set_unit(0x03, unit, self.KEY, self.IV))
+            assert parsed.opcode == p.OPCODE_SET_UNIT
+            assert parsed.channel == p.CHANNEL_AES
+            assert parsed.payload.hex() == ct
+
+    def test_build_set_unit_full_frame_matches_capture(self):
+        assert p.build_set_unit(0x03, 1, self.KEY, self.IV).hex() == self.LB_FRAME
+
+    def test_build_set_unit_rejects_invalid_unit(self):
+        import pytest
+
+        with pytest.raises(ValueError):
+            p.build_set_unit(0x03, 5, self.KEY, self.IV)

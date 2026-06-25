@@ -40,6 +40,7 @@ OPCODE_KEY_EXCHANGE = 0x4201   # OP_HIGH_SECURITY_KEY_EXCHANGE
 OPCODE_KEY_VERIFY = 0x4202     # OP_HIGH_SECURITY_KEY_VERIFY
 OPCODE_MEASUREMENT = 0x4421    # live weight push (resource 21 44 00)
 OPCODE_RESULT = 0x443a         # final result: weight + impedance (resource 3a 44 00)
+OPCODE_SET_UNIT = 0xa163       # config: set the scale's display unit (0=kg, 1=lb, 2=st)
 
 CHANNEL_PLAINTEXT = 0x00
 CHANNEL_AES = 0x01             # the AES-encrypted measurement channel
@@ -244,6 +245,21 @@ def build_key_verify(seq: int, mac: str, iv: bytes, key: bytes) -> bytes:
     return build_frame(seq, OPCODE_KEY_VERIFY, ciphertext, CHANNEL_AES)
 
 
+def build_set_unit(seq: int, unit: int, key: bytes, iv: bytes) -> bytes:
+    """
+    Build a display-unit change command (resource 0xa163).
+
+    The plaintext payload is a single byte = the desired unit (0=kg, 1=lb, 2=st),
+    AES-CBC/PKCS7 encrypted with the session (key, iv) and sent on the AES channel
+    to FFF2 — captured from the app, which writes exactly this on connect and on
+    any unit toggle.
+    """
+    if unit not in (0, 1, 2):
+        raise ValueError(f"unit must be 0 (kg), 1 (lb) or 2 (st); got {unit}")
+    ciphertext = _aes_cbc_encrypt(key, iv, _pkcs7_pad(bytes([unit])))
+    return build_frame(seq, OPCODE_SET_UNIT, ciphertext, CHANNEL_AES)
+
+
 def random_iv() -> bytes:
     return os.urandom(16)
 
@@ -257,6 +273,7 @@ class Measurement(NamedTuple):
     final: bool            # True for the 0x443a result frame
     raw: bytes
     heart_rate: int | None = None  # bpm, present on the final result once measured
+    display_unit: int | None = None  # unit shown on the scale: 0=kg, 1=lb, 2=st
 
 
 def decrypt_frame_payload(key: bytes, iv: bytes, parsed: ParsedFrame) -> bytes:
@@ -287,13 +304,21 @@ def parse_result(plaintext: bytes) -> Measurement | None:
 
     Layout (38 bytes): [0:8]=serial ascii, [8:20]=name, [20:22]=00,
     [22:25]=weight grams (uint24 LE) /1000 kg, [25:27]=impedance (uint16 LE) ohms,
-    [29:33]=timestamp, [36]=heart rate (bpm, 0 until measured).
+    [29:33]=timestamp, [35]=display unit (0=kg, 1=lb, 2=st),
+    [36]=heart rate (bpm, 0 until measured).
     """
     if len(plaintext) < 33:
         return None
     weight = int.from_bytes(plaintext[22:25], "little") / 1000.0
     impedance = struct.unpack("<H", plaintext[25:27])[0]
     timestamp = struct.unpack("<I", plaintext[29:33])[0]
+    # Display unit the scale showed this reading in. Same encoding as the ESF-551
+    # (0=kg, 1=lb, 2=st). Confirmed at byte[35] by a kg-vs-lb capture diff (it
+    # flips 1->0 between lb and kg while bytes 33/34 stay constant). Only 0/1/2
+    # are accepted; anything else is treated as "unknown".
+    display_unit = plaintext[35] if len(plaintext) >= 36 else None
+    if display_unit not in (0, 1, 2):
+        display_unit = None
     # Heart rate is one byte near the end of the frame; 0 means "not measured"
     # (e.g. user stepped off before it locked, or not barefoot on the electrodes).
     heart_rate = plaintext[36] if len(plaintext) >= 37 and plaintext[36] else None
@@ -302,4 +327,5 @@ def parse_result(plaintext: bytes) -> Measurement | None:
         impedance=impedance if 0 < impedance < 60000 else None,
         timestamp=timestamp, final=True, raw=plaintext,
         heart_rate=heart_rate,
+        display_unit=display_unit,
     )
