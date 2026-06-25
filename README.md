@@ -1,34 +1,37 @@
-# Etekcity ESF-551, ESF-24 & FIT-8S BLE
+# Etekcity ESF-551, ESF-24, FIT-8S & EFS-A591S BLE
 
-This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf24), and [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) models.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) and [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale) models.
 
 ## Features
 
-- **ESF-551**: Full feature support including weight, impedance, body metrics and display unit management
-- **ESF-24**: Experimental support
-- **FIT-8S**: Experimental support, advertisement-based (no GATT connection)
+- **ESF-551**: Fully supported and stable (weight, impedance, body metrics, display unit management)
+- **ESF-24**: Experimental support (weight, unit changes)
+- **FIT-8S**: Experimental support (weight, impedance, body metrics)
+- **EFS-A591S (Apex HR)**: Experimental support (weight, impedance, heart rate, body metrics, unit changes)
 - Easy connection and notification handling
-- Body composition metrics via the `BodyMetrics` calculator — works with any impedance-capable scale (ESF-551 and FIT-8S only)
-- Display unit management (ESF-551 and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
+- Body composition metrics via the `BodyMetrics` calculator — works with any impedance-capable scale (ESF-551, EFS-A591S and FIT-8S only)
+- Display unit management (ESF-551, EFS-A591S and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
 
 ## Supported Models
 
 | Model | Status | Features |
 |-------|--------|----------|
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
+| EFS-A591S | 🔬 Experimental | Weight, impedance, heart rate, body metrics, unit changes |
 | ESF-24 | 🔬 Experimental | Weight, unit changes |
 | FIT-8S | 🔬 Experimental | Weight, impedance, body metrics |
 
 ## Version Status
 
-**v0.5.0**:
+**v0.5.2**:
+- ✅ EFS-A591S: Full feature support with DH+AES-CBC encryption layer and multi-chunk reassembly
 - ✅ ESF-551: Fully supported and stable
 - 🔬 ESF-24: Experimental support (weight only)
 - 🔬 FIT-8S: Experimental support (weight & impedance via passive advertisement scanning)
 - ♻️ Internal: scale transport split into `GattScale` (connection-based) and `AdvertisementScale` (advertisement-based) base classes
 
 
-**Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by, or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand), or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
+**Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand) or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
 
 [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/ronnnnnnn)
 
@@ -284,4 +287,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Disclaimer
 
-This is an independent project developed by the community. It is not endorsed by, directly affiliated with, maintained, authorized, or sponsored by Etekcity, VeSync Co., Ltd., or any of their affiliates or subsidiaries. All product and company names are the registered trademarks of their original owners. The use of any trade name or trademark is for identification and reference purposes only and does not imply any association with the trademark holder of their product brand.
+This is an independent project developed by the community. It is not endorsed by, directly affiliated with, maintained, authorized or sponsored by Etekcity, VeSync or any of their affiliates or subsidiaries. All product and company names are the registered trademarks of their original owners. The use of any trade name or trademark is for identification and reference purposes only and does not imply any association with the trademark holder of their product brand.
