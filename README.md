@@ -21,16 +21,6 @@ This package provides a basic unofficial interface for interacting with Etekcity
 | ESF-24 | 🔬 Experimental | Weight, unit changes |
 | FIT-8S | 🔬 Experimental | Weight, impedance, body metrics |
 
-## Version Status
-
-**v0.5.2**:
-- ✅ EFS-A591S: Full feature support with DH+AES-CBC encryption layer and multi-chunk reassembly
-- ✅ ESF-551: Fully supported and stable
-- 🔬 ESF-24: Experimental support (weight only)
-- 🔬 FIT-8S: Experimental support (weight & impedance via passive advertisement scanning)
-- ♻️ Internal: scale transport split into `GattScale` (connection-based) and `AdvertisementScale` (advertisement-based) base classes
-
-
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand) or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
 
 [![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/ronnnnnnn)
@@ -68,7 +58,7 @@ async def main():
         if IMPEDANCE_KEY in data.measurements:
             print(f"Impedance: {data.measurements[IMPEDANCE_KEY]} Ω")
 
-            # Calculate body metrics (ESF-551 and FIT-8S only)
+            # Calculate body metrics (ESF-551, EFS-A591S and FIT-8S only)
             # Note: Replace with your actual height, age and sex
             body_metrics = BodyMetrics(
                 weight_kg=data.measurements[WEIGHT_KEY],
@@ -110,6 +100,10 @@ For different scale models:
 from etekcity_esf551_ble import ESF551Scale
 scale = ESF551Scale(address, callback)
 
+# EFS-A591S / Apex HR (experimental, encrypted)
+from etekcity_esf551_ble import EFSA591SScale
+scale = EFSA591SScale(address, callback)
+
 # ESF-24 (experimental)
 from etekcity_esf551_ble import ESF24Scale
 scale = ESF24Scale(address, callback)
@@ -130,17 +124,17 @@ The scale classes form a small hierarchy by transport:
 
 ```
 EtekcitySmartFitnessScale (abstract: scanning + lifecycle + callback)
-├── GattScale (abstract: GATT connection + cooldown_seconds) → ESF551Scale, ESF24Scale
+├── GattScale (abstract: GATT connection + cooldown_seconds) → ESF551Scale, ESF24Scale, EFSA591SScale
 └── AdvertisementScale (abstract: reads advertisements; unit observed-only) → FIT8SScale
 ```
 
 #### `EtekcitySmartFitnessScale` (Abstract Base)
 
-Transport-agnostic base shared by every model: BLE scanning, lifecycle (`async_start` / `async_stop`), the notification callback, and the `display_unit` / `hw_version` / `sw_version` properties.
+Transport-agnostic base shared by every model: BLE scanning, lifecycle (`async_start` / `async_stop`), the notification callback and the `display_unit` / `hw_version` / `sw_version` properties.
 
 #### `GattScale` (Abstract)
 
-Base for scales that deliver measurements over a GATT connection. Adds the connection lifecycle and the `cooldown_seconds` option. Subclassed by `ESF551Scale` and `ESF24Scale`.
+Base for scales that deliver measurements over a GATT connection. Adds the connection lifecycle and the `cooldown_seconds` option. Subclassed by `ESF551Scale`, `ESF24Scale` and `EFSA591SScale`.
 
 #### `AdvertisementScale` (Abstract)
 
@@ -158,10 +152,14 @@ Experimental implementation for ESF-24 scales (weight only).
 
 Experimental implementation for FIT-8S scales. Reads weight and impedance passively from BLE advertisement manufacturer data — no GATT connection is established.
 
+#### `EFSA591SScale`
+
+Experimental implementation for EFS-A591S (Apex HR) scales. Uses an encrypted protocol over GATT with a Diffie-Hellman key exchange and AES-128-CBC encryption. Supports weight, impedance, heart rate and display unit management. Requires the device's real Bluetooth MAC address for key derivation.
+
 #### Common Methods:
 
 - `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], display_unit: WeightUnit = None, scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE, adapter: str | None = None, bleak_scanner_backend: BaseBleakScanner = None, logger: logging.Logger | None = None)`
-  - GATT-based scales (`ESF551Scale`, `ESF24Scale`) additionally accept `cooldown_seconds: int = 0` — ignore advertisements for that many seconds after a disconnection. It does not apply to advertisement-based scales such as `FIT8SScale`.
+  - GATT-based scales (`ESF551Scale`, `ESF24Scale`, `EFSA591SScale`) additionally accept `cooldown_seconds: int = 0` — ignore advertisements for that many seconds after a disconnection. It does not apply to advertisement-based scales such as `FIT8SScale`.
 - `async_start()`: Start scanning for the scale (GATT-based models connect on detection).
 - `async_stop()`: Stop scanning and disconnect.
 
@@ -171,21 +169,7 @@ Experimental implementation for FIT-8S scales. Reads weight and impedance passiv
 - `hw_version`: Get the hardware version of the scale (read-only).
 - `sw_version`: Get the software version of the scale (read-only).
 
-### `ESF551ScaleWithBodyMetrics`
 
-An extended version of ESF551Scale that automatically calculates body metrics when impedance is available. Body metrics (except BMI) are only added when the scale reports impedance.
-
-#### Methods:
-
-- `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], sex: Sex, birthdate: date, height_m: float, display_unit: WeightUnit = None, scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE, adapter: str | None = None, bleak_scanner_backend: BaseBleakScanner = None, cooldown_seconds: int = 0, logger: logging.Logger | None = None)`
-- `async_start()`: Start scanning for and connecting to the scale.
-- `async_stop()`: Stop the connection to the scale.
-
-#### Properties:
-
-- `display_unit`: Get or set the display unit (WeightUnit.KG, WeightUnit.LB or WeightUnit.ST). Returns None if the display unit is currently unknown (not set by the user and not yet received from the scale together with a stable weight measurement).
-- `hw_version`: Get the hardware version of the scale (read-only).
-- `sw_version`: Get the software version of the scale (read-only).
 
 ### `WeightUnit`
 
@@ -204,11 +188,11 @@ A dataclass containing scale measurement data:
 - `hw_version`: Hardware version
 - `sw_version`: Software version
 - `display_unit`: Current display unit (concerns only the weight as displayed on the scale, the measurement itself is always provided by the API in kilograms)
-- `measurements`: Dictionary of measurements (currently supports: weight in kilograms and impedance in ohms)
+- `measurements`: Dictionary of measurements (currently supports: weight in kilograms, impedance in ohms and heart rate in bpm)
 
 ### `BodyMetrics`
 
-A class for calculating various body composition metrics based on height, age, sex, and the weight and impedance as measured by the scale, similar to the metrics calculated and shown in the VeSync app. Note that currently "Athlete Mode" is not supported.
+A class for calculating various body composition metrics based on height, age, sex and the weight and impedance as measured by the scale, similar to the metrics calculated and shown in the VeSync app. Note that currently "Athlete Mode" is not supported.
 
 #### Methods:
 
@@ -271,6 +255,7 @@ scan on
 ## Acknowledgments
 
 - FIT-8S protocol support contributed by [@Flautz](https://github.com/Flautz) — thank you!
+- EFS-A591S (Apex HR) protocol support contributed by [@r3klawz](https://github.com/r3klawz) — thank you!
 
 
 ## Support the Project

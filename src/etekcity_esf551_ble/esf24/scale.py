@@ -1,9 +1,6 @@
 """ESF-24 scale implementation (experimental)."""
 
-import asyncio
 import logging
-import struct
-import time
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
@@ -11,74 +8,24 @@ from bleak.backends.device import BLEDevice
 from ..const import (
     ALIRO_CHARACTERISTIC_UUID,
     WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
-    WEIGHT_KEY,
 )
-from ..parser import (
+from ..scale import GattScale
+from ..data import (
     BluetoothScanningMode,
-    GattScale,
     ScaleData,
     WeightUnit,
 )
-from .const import CMD_END_MEASUREMENT, CMD_SET_DISPLAY_UNIT
-
+from .protocol import (
+    CMD_END_MEASUREMENT,
+    build_measurement_initiation_command,
+    build_unit_update_command,
+    parse_weight,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 _STATE_UNIT_SET = 1
 _STATE_MEASUREMENT_INIT = 2
-_EPOCH_OFFSET = 946656000
-
-
-def build_unit_update_command(desired_unit: WeightUnit) -> bytearray:
-    """
-    Build the unit update command for ESF24.
-
-    Args:
-        desired_unit: The desired weight unit (0=kg, 1=lb, 2=st)
-
-    Returns:
-        bytearray: The payload to send to the scale to update the display unit
-    """
-    payload = CMD_SET_DISPLAY_UNIT.copy()
-    payload[3] &= 0xF0
-    payload[8] &= 0xF0
-    if desired_unit == WeightUnit.KG:
-        payload[3] |= 1
-        payload[8] |= 1
-    elif desired_unit == WeightUnit.LB:
-        payload[3] |= 2
-        payload[8] |= 2
-    elif desired_unit == WeightUnit.ST:
-        payload[3] |= 8
-        payload[8] |= 8
-    return payload
-
-
-def build_measurement_initiation_command() -> bytearray:
-    """Return a fresh measurement initiation command with current timestamp and checksum."""
-    cmd = bytearray(8)
-    cmd[0:3] = b"\x20\x08\x15"
-    ts = int(time.time()) - _EPOCH_OFFSET
-    struct.pack_into("<I", cmd, 3, ts)
-    cmd[7] = sum(cmd[0:7]) & 0xFF
-    return cmd
-
-
-def parse_weight(payload: bytearray) -> dict[str, int | float | None]:
-    """
-    Parse raw data received from the ESF-24 scale.
-
-    Args:
-        payload (bytearray): Raw data received from the scale.
-
-    Returns:
-        dict: Dictionary containing parsed data with the following keys:
-            - "weight": Weight value in kilograms
-    """
-    data = dict[str, int | float | None]()
-    weight = int(payload[3:5].hex(), 16)
-    data[WEIGHT_KEY] = round(float(weight) / 100, 2)
-    return data
 
 
 class ESF24Scale(GattScale):
@@ -157,7 +104,7 @@ class ESF24Scale(GattScale):
                 "ESF-24 stable weight received (%s). Scheduling measurement end command.",
                 address,
             )
-            asyncio.create_task(
+            self._spawn_task(
                 self._safe_write(CMD_END_MEASUREMENT), name="esf24-end-measurement"
             )
             data = parse_weight(payload)
@@ -177,7 +124,7 @@ class ESF24Scale(GattScale):
                     address,
                 )
                 cmd = build_unit_update_command(self.display_unit)
-                asyncio.create_task(self._safe_write(cmd), name="esf24-unit-update")
+                self._spawn_task(self._safe_write(cmd), name="esf24-unit-update")
         elif len(payload) == 11 and payload[0:3] == b"\x14\x0b\x15":
             if not self._state_mask & _STATE_MEASUREMENT_INIT:
                 self._state_mask |= _STATE_MEASUREMENT_INIT
@@ -186,7 +133,7 @@ class ESF24Scale(GattScale):
                     address,
                 )
                 cmd = build_measurement_initiation_command()
-                asyncio.create_task(
+                self._spawn_task(
                     self._safe_write(cmd), name="esf24-measurement-init"
                 )
         else:

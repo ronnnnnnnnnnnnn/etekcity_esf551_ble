@@ -51,7 +51,7 @@ async def test_esf551_scale_notification_handler():
     scale = ESF551Scale("00:11:22:33:44:55", callback)
 
     test_payload = b"ignored"
-    with patch("src.etekcity_esf551_ble.esf551.parser.parse") as mock_parse:
+    with patch("src.etekcity_esf551_ble.esf551.scale.parse") as mock_parse:
         mock_parse.return_value = {"weight": 70.5, "display_unit": 0}
         scale._notification_handler("char", test_payload, "test_name", "test_address")
 
@@ -99,7 +99,7 @@ async def test_scale_direct_instantiation():
 
     # Mock the scanner to avoid event loop issues
     with patch(
-        "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
+        "src.etekcity_esf551_ble.scale.get_platform_scanner_backend_type"
     ) as mock_get_scanner:
         mock_scanner_class = Mock()
         mock_scanner_instance = Mock()
@@ -207,11 +207,11 @@ async def test_fit8s_display_unit_is_observed_not_settable():
 @pytest.mark.asyncio
 async def test_advertisement_callback_cooldown():
     with patch(
-        "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
+        "src.etekcity_esf551_ble.scale.get_platform_scanner_backend_type"
     ) as mock_get_scanner_backend, patch(
-        "src.etekcity_esf551_ble.parser.establish_connection"
+        "src.etekcity_esf551_ble.scale.establish_connection"
     ) as mock_establish_connection, patch(
-        "src.etekcity_esf551_ble.parser.time.time"
+        "src.etekcity_esf551_ble.scale.time.time"
     ) as mock_time:
         mock_scanner = AsyncMock()
         mock_get_scanner_backend.return_value = (

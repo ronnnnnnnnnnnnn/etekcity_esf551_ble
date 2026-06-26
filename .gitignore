@@ -171,3 +171,4 @@ exploration_bin/
 # Captures containing personal data (device MAC, weight readings)
 btsnoop_hci.log*
 *.jsonl
+examples/

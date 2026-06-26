@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-from collections.abc import Callable
-from datetime import date
 
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import BaseBleakScanner
 
 from ..const import (
     ALIRO_CHARACTERISTIC_UUID,
@@ -18,20 +14,16 @@ from ..const import (
     WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
     WEIGHT_KEY,
 )
-from ..parser import BluetoothScanningMode, GattScale, ScaleData, WeightUnit
-from ..esf551.body_metrics import (
-    BodyMetrics,
-    Sex,
-    _as_dictionary,
-    _calc_age,
-)
-from . import a5_protocol as a5
+
+from ..scale import GattScale
+from ..data import ScaleData, WeightUnit
+from . import protocol as a5
 
 _LOGGER = logging.getLogger(__name__)
 
 # Frames the scale emits that carry no data we use (status/flag/ack frames).
 # Ignored silently so they don't spam the debug log.
-_STATUS_OPCODES = frozenset({0x4202, 0x4420, 0x413b, 0x413d, 0x4434, 0x4436})
+_STATUS_OPCODES = frozenset({0x4202, 0x4420, 0x413B, 0x413D, 0x4434, 0x4436})
 
 
 class EFSA591SScale(GattScale):
@@ -104,7 +96,9 @@ class EFSA591SScale(GattScale):
             await self._send_frame(frame)
 
         except Exception as ex:
-            _LOGGER.exception("EFS-A591S session setup failed: %s(%s)", type(ex), ex.args)
+            _LOGGER.exception(
+                "EFS-A591S session setup failed: %s(%s)", type(ex), ex.args
+            )
             self._client = None
 
     async def _send_frame(self, frame: bytes) -> None:
@@ -158,7 +152,10 @@ class EFSA591SScale(GattScale):
                 unit_frame = a5.build_set_unit(
                     self._next_seq(), int(self._display_unit), self._key, self._iv
                 )
-            asyncio.ensure_future(self._send_verify_then_unit(verify, unit_frame))
+            self._spawn_task(
+                self._send_verify_then_unit(verify, unit_frame),
+                name="efsa591s-verify",
+            )
 
         elif parsed.opcode == a5.OPCODE_RESULT:
             # Only the final result frame carries the stabilized weight plus
@@ -204,58 +201,3 @@ class EFSA591SScale(GattScale):
             measurements[HEART_RATE_KEY] = meas.heart_rate
         scale_data.measurements = measurements
         self._notification_callback(scale_data)
-
-
-class EFSA591SScaleWithBodyMetrics(EFSA591SScale):
-    """
-    EFS-A591S-KUS with on-device body-composition calculation.
-
-    Wraps :class:`EFSA591SScale` and, when an impedance value is present (i.e. on
-    the final result frame), augments ``ScaleData.measurements`` with body
-    metrics (BMI, body-fat %, muscle mass, etc.) computed locally from the user's
-    profile using the same :class:`BodyMetrics` engine as the ESF-551.  Frames
-    that carry weight only (the live stream) get BMI added.
-    """
-
-    def __init__(
-        self,
-        address: str,
-        notification_callback: Callable[[ScaleData], None],
-        sex: Sex,
-        birthdate: date,
-        height_m: float,
-        display_unit: WeightUnit = None,
-        scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
-        adapter: str | None = None,
-        bleak_scanner_backend: BaseBleakScanner = None,
-        cooldown_seconds: int = 0,
-        logger: logging.Logger | None = None,
-    ) -> None:
-        self._sex = sex
-        self._birthdate = birthdate
-        self._height_m = height_m
-        self._original_callback = notification_callback
-        super().__init__(
-            address,
-            self._wrapped_callback,
-            display_unit,
-            scanning_mode,
-            adapter,
-            bleak_scanner_backend,
-            cooldown_seconds,
-            logger,
-        )
-
-    def _wrapped_callback(self, data: ScaleData) -> None:
-        metrics = BodyMetrics(
-            data.measurements[WEIGHT_KEY],
-            self._height_m,
-            _calc_age(self._birthdate),
-            self._sex,
-            data.measurements.get(IMPEDANCE_KEY),
-        )
-        if IMPEDANCE_KEY in data.measurements:
-            data.measurements |= _as_dictionary(metrics)
-        else:
-            data.measurements["body_mass_index"] = metrics.body_mass_index
-        self._original_callback(data)

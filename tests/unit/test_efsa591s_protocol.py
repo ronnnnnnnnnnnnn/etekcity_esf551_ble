@@ -13,7 +13,7 @@ Session-1 ground truth (recovered from captured frames):
 
 import struct
 
-from src.etekcity_esf551_ble.efsa591s import a5_protocol as p
+from src.etekcity_esf551_ble.efsa591s import protocol as p
 
 MAC = "CF:EA:01:28:86:45"
 REV_MAC = bytes.fromhex("45862801eacf")
@@ -61,7 +61,7 @@ class TestFraming:
         # split MEAS into 20-byte chunks like BLE notifications
         frames = []
         for i in range(0, len(MEAS), 20):
-            frames.extend(r.feed(MEAS[i:i + 20]))
+            frames.extend(r.feed(MEAS[i : i + 20]))
         assert frames == [MEAS]
 
 

@@ -7,7 +7,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from src.etekcity_esf551_ble import ESF24Scale, ESF551Scale
-from src.etekcity_esf551_ble.esf551.body_metrics import ESF551ScaleWithBodyMetrics, Sex
+from src.etekcity_esf551_ble.esf551.scale import ESF551ScaleWithBodyMetrics
+from src.etekcity_esf551_ble.body_metrics import Sex
 
 
 def _mock_scanner():
@@ -23,9 +24,9 @@ async def test_esf551_full_workflow():
     callback = Mock()
 
     with patch(
-        "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
+        "src.etekcity_esf551_ble.scale.get_platform_scanner_backend_type"
     ) as mock_get_scanner, patch(
-        "src.etekcity_esf551_ble.esf551.parser.parse"
+        "src.etekcity_esf551_ble.esf551.scale.parse"
     ) as mock_parse:
         mock_scanner_class, _ = _mock_scanner()
         mock_get_scanner.return_value = (mock_scanner_class, None)
@@ -51,7 +52,7 @@ async def test_esf24_kg_only_workflow():
     callback = Mock()
 
     with patch(
-        "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
+        "src.etekcity_esf551_ble.scale.get_platform_scanner_backend_type"
     ) as mock_get_scanner:
         mock_scanner_class, _ = _mock_scanner()
         mock_get_scanner.return_value = (mock_scanner_class, None)
@@ -77,9 +78,9 @@ async def test_body_metrics_integration():
     callback = Mock()
 
     with patch(
-        "src.etekcity_esf551_ble.parser.get_platform_scanner_backend_type"
+        "src.etekcity_esf551_ble.scale.get_platform_scanner_backend_type"
     ) as mock_get_scanner, patch(
-        "src.etekcity_esf551_ble.esf551.parser.parse"
+        "src.etekcity_esf551_ble.esf551.scale.parse"
     ) as mock_parse:
         mock_scanner_class, _ = _mock_scanner()
         mock_get_scanner.return_value = (mock_scanner_class, None)

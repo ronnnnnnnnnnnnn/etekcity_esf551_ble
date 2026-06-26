@@ -1,10 +1,9 @@
 """EFS-A591S-KUS (Apex HR Smart Fitness Scale) support."""
 
-from . import a5_protocol
-from .scale import EFSA591SScale, EFSA591SScaleWithBodyMetrics
+from . import protocol
+from .scale import EFSA591SScale
 
 __all__ = [
     "EFSA591SScale",
-    "EFSA591SScaleWithBodyMetrics",
-    "a5_protocol",
+    "protocol",
 ]

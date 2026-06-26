@@ -1,6 +1,6 @@
 """Unit tests for parsing functions."""
 
-from src.etekcity_esf551_ble.esf551.parser import parse as esf551_parse
+from src.etekcity_esf551_ble.esf551.protocol import parse as esf551_parse
 
 
 def test_parse():

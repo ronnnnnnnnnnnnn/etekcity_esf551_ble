@@ -36,22 +36,23 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 A5_MAGIC = 0xA5
 FLAG_APP_WRITE = 0x23
 
-OPCODE_KEY_EXCHANGE = 0x4201   # OP_HIGH_SECURITY_KEY_EXCHANGE
-OPCODE_KEY_VERIFY = 0x4202     # OP_HIGH_SECURITY_KEY_VERIFY
-OPCODE_MEASUREMENT = 0x4421    # live weight push (resource 21 44 00)
-OPCODE_RESULT = 0x443a         # final result: weight + impedance (resource 3a 44 00)
-OPCODE_SET_UNIT = 0xa163       # config: set the scale's display unit (0=kg, 1=lb, 2=st)
+OPCODE_KEY_EXCHANGE = 0x4201  # OP_HIGH_SECURITY_KEY_EXCHANGE
+OPCODE_KEY_VERIFY = 0x4202  # OP_HIGH_SECURITY_KEY_VERIFY
+OPCODE_MEASUREMENT = 0x4421  # live weight push (resource 21 44 00)
+OPCODE_RESULT = 0x443A  # final result: weight + impedance (resource 3a 44 00)
+OPCODE_SET_UNIT = 0xA163  # config: set the scale's display unit (0=kg, 1=lb, 2=st)
 
 CHANNEL_PLAINTEXT = 0x00
-CHANNEL_AES = 0x01             # the AES-encrypted measurement channel
+CHANNEL_AES = 0x01  # the AES-encrypted measurement channel
 
 # DH parameter ranges
-DH_MOD_MIN, DH_MOD_MAX = 40000, 46340   # prime modulus d
-DH_BASE_MIN, DH_BASE_MAX = 10, 100      # prime base e
-DH_EXP_MIN, DH_EXP_MAX = 5, 20          # secret exponent g
+DH_MOD_MIN, DH_MOD_MAX = 40000, 46340  # prime modulus d
+DH_BASE_MIN, DH_BASE_MAX = 10, 100  # prime base e
+DH_EXP_MIN, DH_EXP_MAX = 5, 20  # secret exponent g
 
 
 # ---- framing --------------------------------------------------------------
+
 
 def _checksum(frame_without_cksum: bytes) -> int:
     """byte[5] is set so the sum of all frame bytes ≡ 0xFF (mod 256)."""
@@ -66,7 +67,9 @@ def build_frame(seq: int, opcode: int, payload: bytes, channel: int) -> bytes:
     where len = total - 6.
     """
     body = bytes([0x01]) + struct.pack("<H", opcode) + bytes([0x00, channel]) + payload
-    header = bytes([A5_MAGIC, FLAG_APP_WRITE, seq & 0xFF]) + struct.pack("<H", len(body))
+    header = bytes([A5_MAGIC, FLAG_APP_WRITE, seq & 0xFF]) + struct.pack(
+        "<H", len(body)
+    )
     frame = bytearray(header + bytes([0x00]) + body)  # 0x00 = checksum placeholder
     frame[5] = _checksum(frame)
     return bytes(frame)
@@ -120,6 +123,7 @@ class FrameReassembler:
 
 # ---- AES ------------------------------------------------------------------
 
+
 def _aes_cbc_decrypt(key: bytes, iv: bytes, ciphertext: bytes) -> bytes:
     dec = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
     return dec.update(ciphertext) + dec.finalize()
@@ -145,6 +149,7 @@ def _pkcs7_unpad(data: bytes) -> bytes:
 
 
 # ---- MAC / Diffie-Hellman / key derivation --------------------------------
+
 
 def reversed_mac_bytes(mac: str) -> bytes:
     """'CF:EA:01:28:86:45' -> b'\\x45\\x86\\x28\\x01\\xea\\xcf' (reversed octets)."""
@@ -191,11 +196,14 @@ def compute_shared(scale_public_h: int, g: int, d: int) -> int:
 
 
 def derive_key(shared: int, mac: str) -> bytes:
-    digest = hashlib.sha256(str(shared).encode() + b"," + reversed_mac_bytes(mac)).digest()
+    digest = hashlib.sha256(
+        str(shared).encode() + b"," + reversed_mac_bytes(mac)
+    ).digest()
     return digest[:16]
 
 
 # ---- handshake messages ---------------------------------------------------
+
 
 def _tz_byte() -> int:
     """Local UTC offset encoded as the app does: rawOffset_seconds * 2 / 3600."""
@@ -229,7 +237,7 @@ def parse_key_exchange_response(frame: bytes) -> int | None:
     p = r[1]  # mac length
     if len(r) < p + 4:
         return None
-    return struct.unpack("<H", r[p + 2:p + 4])[0]
+    return struct.unpack("<H", r[p + 2 : p + 4])[0]
 
 
 def build_key_verify(seq: int, mac: str, iv: bytes, key: bytes) -> bytes:
@@ -266,11 +274,12 @@ def random_iv() -> bytes:
 
 # ---- measurement decoding -------------------------------------------------
 
+
 class Measurement(NamedTuple):
     weight_kg: float
     impedance: int | None  # whole-body impedance in ohms (final result only)
     timestamp: int
-    final: bool            # True for the 0x443a result frame
+    final: bool  # True for the 0x443a result frame
     raw: bytes
     heart_rate: int | None = None  # bpm, present on the final result once measured
     display_unit: int | None = None  # unit shown on the scale: 0=kg, 1=lb, 2=st
@@ -293,8 +302,11 @@ def parse_measurement(plaintext: bytes) -> Measurement | None:
     weight = int.from_bytes(plaintext[0:3], "little") / 1000.0
     timestamp = struct.unpack("<I", plaintext[7:11])[0]
     return Measurement(
-        weight_kg=round(weight, 2), impedance=None,
-        timestamp=timestamp, final=False, raw=plaintext,
+        weight_kg=round(weight, 2),
+        impedance=None,
+        timestamp=timestamp,
+        final=False,
+        raw=plaintext,
     )
 
 
@@ -325,7 +337,9 @@ def parse_result(plaintext: bytes) -> Measurement | None:
     return Measurement(
         weight_kg=round(weight, 2),
         impedance=impedance if 0 < impedance < 60000 else None,
-        timestamp=timestamp, final=True, raw=plaintext,
+        timestamp=timestamp,
+        final=True,
+        raw=plaintext,
         heart_rate=heart_rate,
         display_unit=display_unit,
     )

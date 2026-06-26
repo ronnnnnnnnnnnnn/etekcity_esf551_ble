@@ -1,6 +1,6 @@
 """Unit tests for body metrics calculations."""
 
-from src.etekcity_esf551_ble.esf551.body_metrics import BodyMetrics, Sex
+from src.etekcity_esf551_ble.body_metrics import BodyMetrics, Sex
 
 
 def test_body_metrics_calculations():

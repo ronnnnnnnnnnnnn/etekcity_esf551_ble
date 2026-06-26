@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.etekcity_esf551_ble.fit8s.parser import parse
+from src.etekcity_esf551_ble.fit8s.protocol import parse
 from src.etekcity_esf551_ble.const import DISPLAY_UNIT_KEY, IMPEDANCE_KEY, WEIGHT_KEY
 
 ADDRESS = "A9:89:5D:ED:A0:63"
