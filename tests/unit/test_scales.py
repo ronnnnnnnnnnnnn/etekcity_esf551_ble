@@ -18,6 +18,18 @@ _FIT8S_ADDRESS = "A9:89:5D:ED:A0:63"
 _FIT8S_STABLE_LB = bytes(
     b"\x01\x63\xa0\xed\x5d\x89\xa9\x00\x00\x00\x64\x13\x01\xf4\x01\x01\x01\x00\x00\x00"
 )
+# Same frame with the stability flag (byte 15) cleared: a settling reading.
+_FIT8S_UNSTABLE_LB = _FIT8S_STABLE_LB[:15] + b"\x00" + _FIT8S_STABLE_LB[16:]
+
+
+def _fit8s_advertisement(payload: bytes):
+    """Build a (ble_device, advertisement_data) pair carrying the payload."""
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = _FIT8S_ADDRESS
+    ble_device.name = "Fit 8S"
+    advertisement_data = Mock()
+    advertisement_data.manufacturer_data = {0x1234: payload}
+    return ble_device, advertisement_data
 
 
 @pytest.mark.asyncio
@@ -124,8 +136,11 @@ async def test_fit8s_scale_initialization():
     assert scale.address == _FIT8S_ADDRESS
     assert scale._notification_callback == callback
     assert isinstance(scale, EtekcitySmartFitnessScale)
+    # Model-level dedupe default: the cooldown window outlasts the
+    # advertising burst so one weigh-in delivers one callback.
+    assert scale._cooldown_seconds == 10
     # No GATT machinery on advertisement-based scales.
-    assert not hasattr(scale, "_cooldown_seconds")
+    assert not hasattr(scale, "_client")
 
 
 @pytest.mark.asyncio
@@ -205,14 +220,70 @@ async def test_fit8s_display_unit_is_observed_not_settable():
 
 
 @pytest.mark.asyncio
+async def test_fit8s_repeated_stable_frames_within_cooldown_deliver_once():
+    # A weigh-in re-broadcasts the final frame for the whole advertising
+    # burst; delivering a reading arms the cooldown so only one lands.
+    callback = Mock()
+    scale = FIT8SScale(_FIT8S_ADDRESS, callback, bleak_scanner_backend=Mock())
+    ble_device, advertisement_data = _fit8s_advertisement(_FIT8S_STABLE_LB)
+
+    await scale._advertisement_callback(ble_device, advertisement_data)
+    await scale._advertisement_callback(ble_device, advertisement_data)
+
+    assert callback.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_fit8s_stable_frame_after_cooldown_expiry_delivers_again():
+    callback = Mock()
+    scale = FIT8SScale(_FIT8S_ADDRESS, callback, bleak_scanner_backend=Mock())
+    ble_device, advertisement_data = _fit8s_advertisement(_FIT8S_STABLE_LB)
+
+    await scale._advertisement_callback(ble_device, advertisement_data)
+    scale._cooldown_end_time = 0  # simulate the window elapsing
+    await scale._advertisement_callback(ble_device, advertisement_data)
+
+    assert callback.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_fit8s_zero_cooldown_delivers_every_stable_frame():
+    callback = Mock()
+    scale = FIT8SScale(
+        _FIT8S_ADDRESS, callback, bleak_scanner_backend=Mock(), cooldown_seconds=0
+    )
+    ble_device, advertisement_data = _fit8s_advertisement(_FIT8S_STABLE_LB)
+
+    await scale._advertisement_callback(ble_device, advertisement_data)
+    await scale._advertisement_callback(ble_device, advertisement_data)
+
+    assert callback.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_fit8s_unstable_frame_does_not_arm_cooldown():
+    callback = Mock()
+    scale = FIT8SScale(_FIT8S_ADDRESS, callback, bleak_scanner_backend=Mock())
+    ble_device, settling = _fit8s_advertisement(_FIT8S_UNSTABLE_LB)
+    _, final = _fit8s_advertisement(_FIT8S_STABLE_LB)
+
+    await scale._advertisement_callback(ble_device, settling)
+    await scale._advertisement_callback(ble_device, final)
+
+    assert callback.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_advertisement_callback_cooldown():
-    with patch(
-        "src.etekcity_esf551_ble.scale.get_platform_scanner_backend_type"
-    ) as mock_get_scanner_backend, patch(
-        "src.etekcity_esf551_ble.scale.establish_connection"
-    ) as mock_establish_connection, patch(
-        "src.etekcity_esf551_ble.scale.time.time"
-    ) as mock_time:
+    with (
+        patch(
+            "src.etekcity_esf551_ble.scale.get_platform_scanner_backend_type"
+        ) as mock_get_scanner_backend,
+        patch(
+            "src.etekcity_esf551_ble.scale.establish_connection"
+        ) as mock_establish_connection,
+        patch("src.etekcity_esf551_ble.scale.time.time") as mock_time,
+    ):
         mock_scanner = AsyncMock()
         mock_get_scanner_backend.return_value = (
             Mock(return_value=mock_scanner),

@@ -45,9 +45,15 @@ class EtekcitySmartFitnessScale(abc.ABC):
     Abstract base class for Etekcity Smart Fitness Scale implementations.
 
     Handles the parts common to every model regardless of how measurements are
-    obtained: BLE scanner setup and lifecycle, address filtering, and the
-    notification callback. Transport-specific behaviour lives in the
-    :class:`GattScale` and :class:`AdvertisementScale` subclasses.
+    obtained: BLE scanner setup and lifecycle, address filtering, the
+    notification callback, and the cooldown gate that ignores advertisements
+    while a cooldown window is open. The base only *checks* the window;
+    each subclass decides when to arm it (:class:`GattScale` on disconnect,
+    :class:`AdvertisementScale` on delivering a reading). The window is
+    disabled by default (``cooldown_seconds=0``) at the transport level —
+    a sensible length is hardware knowledge, so the concrete model classes
+    set their own defaults. Transport-specific behaviour lives in the
+    subclasses' :meth:`_handle_advertisement`.
 
     Attributes:
         address: The BLE MAC address of the scale
@@ -65,6 +71,8 @@ class EtekcitySmartFitnessScale(abc.ABC):
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
         logger: logging.Logger | None = None,
+        *,
+        cooldown_seconds: int = 0,
     ) -> None:
         """
         Initialize the scale interface.
@@ -80,6 +88,8 @@ class EtekcitySmartFitnessScale(abc.ABC):
             bleak_scanner_backend: Optional custom BLE scanner backend
             logger: Optional logger instance. If not provided, uses the library's
                     internal logger.
+            cooldown_seconds: Length of the cooldown window during which
+                              advertisements are ignored. 0 disables the window.
         """
         self._logger = logger or _LOGGER
         self._logger.info(
@@ -91,6 +101,8 @@ class EtekcitySmartFitnessScale(abc.ABC):
         self._sw_version: str | None = None
         self._display_unit: WeightUnit | None = None
         self._notification_callback = notification_callback
+        self._cooldown_seconds = cooldown_seconds
+        self._cooldown_end_time: float = 0
 
         if bleak_scanner_backend is None:
             scanner_kwargs: dict[str, Any] = {
@@ -138,15 +150,41 @@ class EtekcitySmartFitnessScale(abc.ABC):
         if value is not None:
             self._display_unit = value
 
-    @abc.abstractmethod
     async def _advertisement_callback(
         self, ble_device: BLEDevice, advertisement_data: AdvertisementData
     ) -> None:
         """
-        Handle Bluetooth advertisements from the target scale.
+        Filter advertisements from the scanner and dispatch the target scale's
+        to :meth:`_handle_advertisement`.
 
-        Called by the scanner for every detected device. Implementations decide
-        what to do with an advertisement from ``self.address``: connect over GATT
+        Drops advertisements from other devices, and all advertisements while
+        the cooldown window is open.
+
+        Args:
+            ble_device: The detected Bluetooth device
+            advertisement_data: Advertisement data for the detected device
+        """
+        if ble_device.address != self.address:
+            return
+
+        if self._cooldown_seconds > 0 and time.time() < self._cooldown_end_time:
+            self._logger.debug(
+                "Ignoring advertisement during cooldown period (cooldown ends at %s)",
+                self._cooldown_end_time,
+            )
+            return
+
+        await self._handle_advertisement(ble_device, advertisement_data)
+
+    @abc.abstractmethod
+    async def _handle_advertisement(
+        self, ble_device: BLEDevice, advertisement_data: AdvertisementData
+    ) -> None:
+        """
+        Handle an advertisement from the target scale (already filtered by
+        address and cooldown).
+
+        Implementations decide what to do with it: connect over GATT
         (:class:`GattScale`) or parse the advertisement payload directly
         (:class:`AdvertisementScale`).
 
@@ -218,16 +256,13 @@ class GattScale(EtekcitySmartFitnessScale, abc.ABC):
             adapter,
             bleak_scanner_backend,
             logger,
+            cooldown_seconds=cooldown_seconds,
         )
         self._client: BleakClient | None = None
         self._initializing: bool = False
-        self._cooldown_seconds = cooldown_seconds
-        self._cooldown_end_time: float = 0
         self._background_tasks: set[asyncio.Task] = set()
 
-    def _spawn_task(
-        self, coro: Any, *, name: str | None = None
-    ) -> asyncio.Task:
+    def _spawn_task(self, coro: Any, *, name: str | None = None) -> asyncio.Task:
         """
         Schedule a fire-and-forget coroutine safely.
 
@@ -246,9 +281,7 @@ class GattScale(EtekcitySmartFitnessScale, abc.ABC):
         if task.cancelled():
             return
         if (exc := task.exception()) is not None:
-            self._logger.error(
-                "Background task %s failed: %s", task.get_name(), exc
-            )
+            self._logger.error("Background task %s failed: %s", task.get_name(), exc)
 
     @abc.abstractmethod
     def _notification_handler(
@@ -292,32 +325,19 @@ class GattScale(EtekcitySmartFitnessScale, abc.ABC):
         self._cooldown_end_time = disconnect_time + self._cooldown_seconds
         self._client = None
 
-    async def _advertisement_callback(
+    async def _handle_advertisement(
         self, ble_device: BLEDevice, _: AdvertisementData
     ) -> None:
         """
-        Handle Bluetooth advertisements from the scale.
+        Handle an advertisement from the target scale.
 
-        This method is called when an advertisement from the target scale
-        is detected. It establishes a connection to the scale and sets up
-        the necessary characteristics and notifications.
+        Establishes a connection to the scale and sets up the necessary
+        characteristics and notifications.
 
         Args:
             ble_device: The detected Bluetooth device
             _: Advertisement data (unused)
         """
-        if ble_device.address != self.address:
-            return
-
-        # Ignore advertisements received during cooldown period
-        # This prevents queued callbacks from being processed after cooldown expires
-        if self._cooldown_seconds > 0 and time.time() < self._cooldown_end_time:
-            self._logger.debug(
-                "Ignoring advertisement during cooldown period (cooldown ends at %s)",
-                self._cooldown_end_time,
-            )
-            return
-
         async with self._lock:
             if self._client is not None or self._initializing:
                 return
@@ -358,6 +378,11 @@ class AdvertisementScale(EtekcitySmartFitnessScale, abc.ABC):
     Each advertisement from the target scale is passed to :meth:`_parse`; a
     non-``None`` result is wrapped in a :class:`ScaleData` and delivered to the
     notification callback.
+
+    A weigh-in makes the scale re-broadcast its final frame for the whole
+    advertising burst, so delivering a reading arms the cooldown window: one
+    callback per weigh-in, with the repeated stable frames suppressed until the
+    window closes. ``cooldown_seconds=0`` delivers every stable frame.
     """
 
     # Fallback device name used when the advertisement carries none.
@@ -395,12 +420,9 @@ class AdvertisementScale(EtekcitySmartFitnessScale, abc.ABC):
         """
         return None
 
-    async def _advertisement_callback(
+    async def _handle_advertisement(
         self, ble_device: BLEDevice, advertisement_data: AdvertisementData
     ) -> None:
-        if ble_device.address != self.address:
-            return
-
         for mfr_bytes in advertisement_data.manufacturer_data.values():
             payload = bytearray(mfr_bytes)
             self._logger.debug(
@@ -424,4 +446,5 @@ class AdvertisementScale(EtekcitySmartFitnessScale, abc.ABC):
                 if display_unit is not None:
                     self._display_unit = display_unit
                 self._notification_callback(scale_data)
+                self._cooldown_end_time = time.time() + self._cooldown_seconds
                 return
