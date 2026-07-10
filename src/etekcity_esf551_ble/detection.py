@@ -143,6 +143,10 @@ QN_MODEL_CODES: dict[int, ScaleModel] = {
     9729: ScaleModel.ESF24,
 }
 
+# Identifiers already reported via the fallback-path INFO log, so each one is
+# logged once per process instead of on every advertisement.
+_reported_identifiers: set[int] = set()
+
 # Fallback matchers, checked in order when no model identifier matches. Each
 # entry is (model, required_manufacturer_id | None, fnmatch pattern).
 # Patterns are matched case-insensitively against the advertised local name
@@ -171,12 +175,16 @@ def detect_model(
     collide, and the ESF-24 from foreign QingNiu scales sharing its name
     family). Name/address matchers are a fallback for truncated or missing
     manufacturer data.
+
+    For the QN (65535) family, the MAC echo is only validated when
+    ``address`` is a real MAC (colon-separated); pass the address whenever
+    available.
     """
     manufacturer_data = manufacturer_data or {}
 
     etekcity_code = None
     payload = manufacturer_data.get(ETEKCITY_MANUFACTURER_ID)
-    if payload is not None:
+    if payload is not None and is_etekcity_frame(payload, address):
         etekcity_code = parse_model_code(payload)
         if etekcity_code is not None and etekcity_code in MODEL_CODES:
             return MODEL_CODES[etekcity_code]
@@ -192,9 +200,13 @@ def detect_model(
             continue
         for candidate in (local_name, address):
             if candidate and fnmatch.fnmatch(candidate.lower(), pattern.lower()):
-                if etekcity_code is not None:
+                if (
+                    etekcity_code is not None
+                    and etekcity_code not in _reported_identifiers
+                ):
                     # A scale variant whose identifier isn't in the registry
                     # yet — every such report lets us extend MODEL_CODES.
+                    _reported_identifiers.add(etekcity_code)
                     _LOGGER.info(
                         "Detected %s via fallback matcher %r with unrecognized"
                         " model identifier %d — please report this identifier"

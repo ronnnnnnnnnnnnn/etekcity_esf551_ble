@@ -4,21 +4,34 @@ Fixtures are real captured payloads (manufacturer-data value as reported by
 bleak/HA — the two-byte company ID already stripped).
 """
 
+import logging
+
+from src.etekcity_esf551_ble import detection as detection_module
 from src.etekcity_esf551_ble.detection import (
+    CAPABILITIES,
     ETEKCITY_MANUFACTURER_ID,
     QN_MANUFACTURER_ID,
     ScaleModel,
+    detect_model,
+    is_etekcity_frame,
     parse_model_code,
 )
 
 # Real captures
 ESF551_PAYLOAD = bytes.fromhex("0162291c004dd00002")  # D0:4D:00:1C:29:62, code 2
 FIT8S_PAYLOAD = bytes.fromhex("0163a0ed5d89a9c0a901563a0100000100020300")  # code 49321
-PURIFIER_PAYLOAD = bytes.fromhex("018e31e5519140c623020202")  # air purifier, code 0xC623
+PURIFIER_PAYLOAD = bytes.fromhex(
+    "018e31e5519140c623020202"
+)  # air purifier, code 0xC623
 ESF24_PAYLOAD = bytes.fromhex("01260100069ea50b44ac04")  # QN frame, code 9729
-RENPHO_QN_PAYLOAD = bytes.fromhex("09e9000000230a670003ff")  # foreign QN scale, code 0xE900
+RENPHO_QN_PAYLOAD = bytes.fromhex(
+    "09e9000000230a670003ff"
+)  # foreign QN scale, code 0xE900
 # Synthetic: Etekcity frame for MAC CF:EA:01:28:86:45 with code 5
 EFSA591S_PAYLOAD = bytes.fromhex("0145862801eacf0005")
+
+MFR = ETEKCITY_MANUFACTURER_ID
+QN = QN_MANUFACTURER_ID
 
 
 def test_manufacturer_id_constants():
@@ -44,12 +57,6 @@ def test_parse_model_code_reads_be16_at_offset_7():
 def test_parse_model_code_rejects_short_payloads():
     assert parse_model_code(b"") is None
     assert parse_model_code(bytes.fromhex("0162291c004dd000")) is None  # 8 bytes
-
-
-from src.etekcity_esf551_ble.detection import detect_model  # noqa: E402
-
-MFR = ETEKCITY_MANUFACTURER_ID
-QN = QN_MANUFACTURER_ID
 
 
 def test_detect_esf551_by_model_code():
@@ -139,8 +146,7 @@ def test_qn_frame_dynamic_bytes_ignored():
 def test_unrecognized_variant_logs_identifier(caplog):
     # ESF-551-style frame with an identifier not in the registry: the name
     # matcher still detects it, and the identifier is logged for reporting.
-    import logging
-
+    detection_module._reported_identifiers.clear()
     payload = bytes.fromhex("0162291c004dd00001")  # identifier 1
     with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
         assert (
@@ -151,8 +157,6 @@ def test_unrecognized_variant_logs_identifier(caplog):
 
 
 def test_is_etekcity_frame():
-    from src.etekcity_esf551_ble.detection import is_etekcity_frame
-
     # Any Etekcity-platform frame qualifies, scale or not (platform check,
     # not a scale check) — unknown future models must never be filtered out.
     assert is_etekcity_frame(ESF551_PAYLOAD, "D0:4D:00:1C:29:62")
@@ -166,7 +170,42 @@ def test_is_etekcity_frame():
     assert not is_etekcity_frame(b"\x01\x62")
 
 
-from src.etekcity_esf551_ble.detection import CAPABILITIES  # noqa: E402
+def test_etekcity_registry_requires_frame_shape():
+    # Registered identifier but wrong header byte: not trusted.
+    bad_header = b"\x02" + ESF551_PAYLOAD[1:]
+    assert detect_model(None, {MFR: bad_header}) is None
+    # Registered identifier but MAC echo mismatching the device address.
+    assert (
+        detect_model(None, {MFR: ESF551_PAYLOAD}, address="AA:BB:CC:DD:EE:FF") is None
+    )
+    # Same payload with the matching address still detects.
+    assert (
+        detect_model(None, {MFR: ESF551_PAYLOAD}, address="D0:4D:00:1C:29:62")
+        == ScaleModel.ESF551
+    )
+
+
+def test_qn_frame_without_address_accepts_registered_code():
+    # Without an address there is no echo to check; the registry still gates.
+    assert detect_model(None, {QN: ESF24_PAYLOAD}) == ScaleModel.ESF24
+    assert detect_model(None, {QN: RENPHO_QN_PAYLOAD}) is None
+
+
+def test_name_matching_is_case_insensitive():
+    assert detect_model("qn-scale1", {}) == ScaleModel.ESF24
+    assert (
+        detect_model("ETEKCITY SMART FITNESS SCALE", {MFR: b"\x01\x62"})
+        == ScaleModel.ESF551
+    )
+
+
+def test_unrecognized_identifier_logged_once(caplog):
+    detection_module._reported_identifiers.clear()
+    payload = bytes.fromhex("0162291c004dd00063")  # identifier 99
+    with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
+        detect_model("Etekcity Smart Fitness Scale", {MFR: payload})
+        detect_model("Etekcity Smart Fitness Scale", {MFR: payload})
+    assert caplog.text.count("unrecognized model identifier 99") == 1
 
 
 def test_every_model_has_capabilities():
