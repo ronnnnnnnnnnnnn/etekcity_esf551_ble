@@ -142,7 +142,7 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 | FIT-8S | 1744 | 49321 |
 | ESF-24 | 65535 | 9729 |
 
-Identifiers are compared as the full 16-bit value with frame-shape/MAC-echo validation; codes for other regional variants are added as units are reported (`detect_model` logs unrecognized identifiers), with name/address fallback matchers covering unlisted variants meanwhile.
+Identifiers are compared as the full 16-bit value, with frame-shape and MAC-echo validation. Codes for other regional variants are added as units are reported — when a name/address fallback matcher identifies a device whose identifier isn't in the registry yet, `detect_model` logs the identifier so it can be contributed — and those fallback matchers cover unlisted variants in the meantime.
 
 
 ## API Reference

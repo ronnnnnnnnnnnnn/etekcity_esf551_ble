@@ -34,7 +34,7 @@ from .scale import (
 
 # Model -> concrete client class. detection.py stays import-light (no client
 # imports), so this map lives here where the classes are already imported.
-SCALE_CLASSES: dict[ScaleModel, type] = {
+SCALE_CLASSES: dict[ScaleModel, type[EtekcitySmartFitnessScale]] = {
     ScaleModel.ESF551: ESF551Scale,
     ScaleModel.ESF24: ESF24Scale,
     ScaleModel.FIT8S: FIT8SScale,

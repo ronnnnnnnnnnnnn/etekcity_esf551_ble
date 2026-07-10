@@ -237,3 +237,6 @@ def test_public_api_exports():
     assert lib.SCALE_CLASSES[ScaleModel.ESF551] is lib.ESF551Scale
     assert lib.SCALE_CLASSES[ScaleModel.ESF24] is lib.ESF24Scale
     assert lib.SCALE_CLASSES[ScaleModel.FIT8S] is lib.FIT8SScale
+    assert "SCALE_CLASSES" in lib.__all__
+    for name in lib.__all__:
+        assert hasattr(lib, name), f"__all__ exports missing attribute: {name}"
