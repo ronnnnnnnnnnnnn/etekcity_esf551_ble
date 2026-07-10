@@ -28,7 +28,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 
 ## Installation
 
-Requires Python 3.10+ and bleak 2.x or 3.x. Install using pip:
+Requires Python 3.11+ and bleak 2.x or 3.x. Install using pip:
 
 ```bash
 pip install etekcity_esf551_ble
@@ -114,6 +114,35 @@ scale = FIT8SScale(address, callback)
 ```
 
 For a real-life usage example of this library, check out the [Etekcity Fitness Scale BLE Integration for Home Assistant](https://github.com/ronnnnnnnnnnnnn/etekcity_fitness_scale_ble).
+
+
+## Model Detection
+
+The library can classify a BLE advertisement into a `ScaleModel` via `detect_model(local_name, manufacturer_data, address=None)`, returning `None` for unrecognized devices.
+
+```python
+from etekcity_esf551_ble import detect_model, SCALE_CLASSES
+
+model = detect_model(local_name, manufacturer_data)
+if model is not None:
+    scale_class = SCALE_CLASSES[model]
+    scale = scale_class(address, callback)
+```
+
+Two manufacturer-data frame families, both observed in real advertisement captures:
+
+**Company ID 1744 (Etekcity platform):** `[0]=0x01, [1:7]=device MAC little-endian, [7:9]=model identifier BE16, [9:]=model-specific payload`
+
+**Company ID 65535 (QingNiu platform, ESF-24):** `[0]=frame header, [1:3]=model identifier BE16, [3:5]=unknown, [5:11]=device MAC little-endian`
+
+| Model | Company | Codes |
+|---|---|---|
+| ESF-551 | 1744 | 2 |
+| EFS-A591S | 1744 | 3, 5, 127, 134 |
+| FIT-8S | 1744 | 49321 |
+| ESF-24 | 65535 | 9729 |
+
+Identifiers are compared as the full 16-bit value with frame-shape/MAC-echo validation; codes for other regional variants are added as units are reported (`detect_model` logs unrecognized identifiers), with name/address fallback matchers covering unlisted variants meanwhile.
 
 
 ## API Reference
@@ -234,7 +263,7 @@ Enum for BLE scanning mode (Linux only; other platforms use active scanning):
 
 ## Compatibility
 
-- Python 3.10+
+- Python 3.11+
 - bleak 2.x or 3.x (`bleak>=2.0.0,<4.0.0`)
 - Tested on Mac (Apple Silicon) and Raspberry Pi 4
 - Compatibility with Windows is unknown

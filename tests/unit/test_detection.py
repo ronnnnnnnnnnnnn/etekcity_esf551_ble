@@ -223,3 +223,17 @@ def test_capability_flags():
     ]
     # FIT-8S display unit is observed-only (advertisement scale, no GATT write)
     assert CAPABILITIES[ScaleModel.FIT8S].display_unit_settable is False
+
+
+def test_public_api_exports():
+    import src.etekcity_esf551_ble as lib
+
+    assert lib.ScaleModel is ScaleModel
+    assert lib.detect_model is detect_model
+    assert lib.CAPABILITIES is CAPABILITIES
+    # SCALE_CLASSES maps every model to its client class
+    assert set(lib.SCALE_CLASSES) == set(ScaleModel)
+    assert lib.SCALE_CLASSES[ScaleModel.EFSA591S] is lib.EFSA591SScale
+    assert lib.SCALE_CLASSES[ScaleModel.ESF551] is lib.ESF551Scale
+    assert lib.SCALE_CLASSES[ScaleModel.ESF24] is lib.ESF24Scale
+    assert lib.SCALE_CLASSES[ScaleModel.FIT8S] is lib.FIT8SScale
