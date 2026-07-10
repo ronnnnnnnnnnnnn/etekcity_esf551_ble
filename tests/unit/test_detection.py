@@ -164,3 +164,23 @@ def test_is_etekcity_frame():
     assert not is_etekcity_frame(ESF551_PAYLOAD, "AA:BB:CC:DD:EE:FF")
     assert not is_etekcity_frame(RENPHO_QN_PAYLOAD, "FF:03:00:67:0A:23")
     assert not is_etekcity_frame(b"\x01\x62")
+
+
+from src.etekcity_esf551_ble.detection import CAPABILITIES  # noqa: E402
+
+
+def test_every_model_has_capabilities():
+    assert set(CAPABILITIES) == set(ScaleModel)
+
+
+def test_capability_flags():
+    assert CAPABILITIES[ScaleModel.ESF24].has_impedance is False
+    assert CAPABILITIES[ScaleModel.ESF551].has_impedance is True
+    assert CAPABILITIES[ScaleModel.FIT8S].has_impedance is True
+    assert CAPABILITIES[ScaleModel.EFSA591S].has_impedance is True
+    # Heart rate: EFS-A591S only
+    assert [m for m in ScaleModel if CAPABILITIES[m].has_heart_rate] == [
+        ScaleModel.EFSA591S
+    ]
+    # FIT-8S display unit is observed-only (advertisement scale, no GATT write)
+    assert CAPABILITIES[ScaleModel.FIT8S].display_unit_settable is False
