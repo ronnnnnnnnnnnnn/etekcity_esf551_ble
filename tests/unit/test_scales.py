@@ -36,7 +36,7 @@ def _fit8s_advertisement(payload: bytes):
 async def test_esf551_scale_initialization():
     """Test ESF-551 scale initialization."""
     callback = Mock()
-    scale = ESF551Scale("00:11:22:33:44:55", callback)
+    scale = ESF551Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
 
     assert scale.address == "00:11:22:33:44:55"
     assert scale._notification_callback == callback
@@ -48,7 +48,7 @@ async def test_esf551_scale_initialization():
 async def test_esf24_scale_initialization():
     """Test ESF-24 scale initialization."""
     callback = Mock()
-    scale = ESF24Scale("00:11:22:33:44:55", callback)
+    scale = ESF24Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
 
     assert scale.address == "00:11:22:33:44:55"
     assert scale._notification_callback == callback
@@ -60,7 +60,7 @@ async def test_esf24_scale_initialization():
 async def test_esf551_scale_notification_handler():
     """Test ESF-551 notification handler uses parser output."""
     callback = Mock()
-    scale = ESF551Scale("00:11:22:33:44:55", callback)
+    scale = ESF551Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
 
     test_payload = b"ignored"
     with patch("src.etekcity_esf551_ble.esf551.scale.parse") as mock_parse:
@@ -76,7 +76,7 @@ async def test_esf551_scale_notification_handler():
 @pytest.mark.asyncio
 async def test_esf551_scale_set_display_unit():
     """Test ESF-551 display unit setting."""
-    scale = ESF551Scale("00:11:22:33:44:55", Mock())
+    scale = ESF551Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
 
     # Test setting different units
     scale.display_unit = WeightUnit.KG
@@ -95,7 +95,7 @@ async def test_esf551_scale_set_display_unit():
 @pytest.mark.asyncio
 async def test_esf24_scale_set_display_unit():
     """Test ESF-24 display unit enforcement."""
-    scale = ESF24Scale("00:11:22:33:44:55", Mock())
+    scale = ESF24Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
 
     scale.display_unit = WeightUnit.LB
     assert scale.display_unit == WeightUnit.LB
