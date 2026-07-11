@@ -240,3 +240,19 @@ def test_public_api_exports():
     assert "SCALE_CLASSES" in lib.__all__
     for name in lib.__all__:
         assert hasattr(lib, name), f"__all__ exports missing attribute: {name}"
+
+
+def test_unrecognized_qn_identifier_logged(caplog):
+    # Symmetric with the Etekcity family: a QN-frame device that a fallback
+    # matcher still identifies gets its unknown identifier logged too.
+    detection_module._reported_identifiers.clear()
+    # Synthetic QN frame: header 0x01, identifier 9730 (not in the registry),
+    # MAC echo for 04:AC:44:0B:B3:65 (matches the ESF-24 OUI matcher).
+    payload = bytes.fromhex("012602000065b30b44ac04")
+    with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
+        assert (
+            detect_model(None, {QN: payload}, address="04:AC:44:0B:B3:65")
+            == ScaleModel.ESF24
+        )
+        detect_model(None, {QN: payload}, address="04:AC:44:0B:B3:65")
+    assert caplog.text.count("unrecognized model identifier 9730") == 1

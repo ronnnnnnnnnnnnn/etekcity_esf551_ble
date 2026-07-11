@@ -118,16 +118,48 @@ For a real-life usage example of this library, check out the [Etekcity Fitness S
 
 ## Model Detection
 
-The library can classify a BLE advertisement into a `ScaleModel` via `detect_model(local_name, manufacturer_data, address=None)`, returning `None` for unrecognized devices.
+The library provides helpers to classify a BLE advertisement into a `ScaleModel` via `detect_model(local_name, manufacturer_data, address=None)`, returning `None` for unrecognized devices. Combined with `SCALE_CLASSES`, this removes the need to know your scale's model (or even its address) up front — scan, classify, and connect with the right client. Here's a basic example of how to use it:
 
 ```python
-from etekcity_esf551_ble import detect_model, SCALE_CLASSES
+import asyncio
 
-model = detect_model(local_name, manufacturer_data)
-if model is not None:
-    scale_class = SCALE_CLASSES[model]
-    scale = scale_class(address, callback)
+from bleak import BleakScanner
+
+from etekcity_esf551_ble import SCALE_CLASSES, ScaleData, WeightUnit, detect_model
+
+
+async def find_scale(timeout: float = 30.0):
+    """Return (address, model) of the first recognized scale that advertises."""
+    found = asyncio.get_running_loop().create_future()
+
+    def on_advertisement(device, adv):
+        model = detect_model(adv.local_name, adv.manufacturer_data, device.address)
+        if model is not None and not found.done():
+            found.set_result((device.address, model))
+
+    async with BleakScanner(on_advertisement):
+        # Some models only advertise while in use, so step on the scale.
+        return await asyncio.wait_for(found, timeout)
+
+
+def on_measurement(data: ScaleData) -> None:
+    print(f"{data.measurements['weight']} kg  ({data.display_unit.name})")
+
+
+async def main():
+    address, model = await find_scale()
+    print(f"Found {model.value} at {address}")
+
+    scale = SCALE_CLASSES[model](address, on_measurement, WeightUnit.KG)
+    await scale.async_start()
+    await asyncio.sleep(60)  # step on the scale
+    await scale.async_stop()
+
+
+asyncio.run(main())
 ```
+
+Note for macOS: CoreBluetooth reports devices by UUID rather than MAC address; construct the scanner with `BleakScanner(on_advertisement, cb={"use_bdaddr": True})` so `detect_model()` can validate the MAC echoes (and so the EFS-A591S client, whose session keys derive from the MAC, can connect).
 
 Two manufacturer-data frame families, both observed in real advertisement captures:
 
@@ -142,7 +174,7 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 | FIT-8S | 1744 | 49321 |
 | ESF-24 | 65535 | 9729 |
 
-Identifiers are compared as the full 16-bit value, with frame-shape and MAC-echo validation. Codes for other regional variants are added as units are reported — when a name/address fallback matcher identifies a device whose identifier isn't in the registry yet, `detect_model` logs the identifier so it can be contributed — and those fallback matchers cover unlisted variants in the meantime.
+Identifiers are compared as the full 16-bit value, with frame-shape and MAC-echo validation. Codes for other variants are added as units are reported — when a name/address fallback matcher identifies a device whose identifier isn't in the registry yet, `detect_model` logs the identifier so it can be reported and added to the registry — and those fallback matchers cover unlisted variants in the meantime.
 
 
 ## API Reference
