@@ -11,9 +11,8 @@ Company ID 1744 (Etekcity platform)::
 
 Company ID 65535 (QN platform, used by the ESF-24)::
 
-    [0]    frame header
-    [1:3]  model identifier, 16-bit big-endian
-    [3:5]  unknown
+    [0:2]  model identifier, 16-bit little-endian (QN convention)
+    [2:5]  unknown
     [5:11] device MAC address, little-endian
 
 Company ID 65535 is a catch-all used by many vendors, so for that
@@ -34,7 +33,7 @@ ETEKCITY_MANUFACTURER_ID = 1744
 QN_MANUFACTURER_ID = 65535
 
 _ETEKCITY_MODEL_START = 7  # BE16 at bytes 7:9, after the embedded MAC
-_QN_MODEL_START = 1  # BE16 at bytes 1:3
+_QN_MODEL_START = 0  # LE16 at bytes 0:2
 _QN_MAC_SLICE = slice(5, 11)
 
 
@@ -108,7 +107,7 @@ def _parse_qn_model_code(payload: bytes, address: str | None) -> int | None:
         expected = _reversed_mac(address)
         if expected is not None and payload[_QN_MAC_SLICE] != expected:
             return None
-    return int.from_bytes(payload[_QN_MODEL_START : _QN_MODEL_START + 2], "big")
+    return int.from_bytes(payload[_QN_MODEL_START : _QN_MODEL_START + 2], "little")
 
 
 # Model-identifier registries. Unlisted/unknown variants are covered by FALLBACK_MATCHERS.

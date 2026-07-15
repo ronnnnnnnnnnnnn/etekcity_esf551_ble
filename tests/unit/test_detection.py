@@ -23,9 +23,9 @@ FIT8S_PAYLOAD = bytes.fromhex("0163a0ed5d89a9c0a901563a0100000100020300")  # cod
 PURIFIER_PAYLOAD = bytes.fromhex(
     "018e31e5519140c623020202"
 )  # air purifier, code 0xC623
-ESF24_PAYLOAD = bytes.fromhex("01260100069ea50b44ac04")  # QN frame, code 9729
+ESF24_PAYLOAD = bytes.fromhex("012601000607aa0b44ac04")  # QN frame, code 9729
 RENPHO_QN_PAYLOAD = bytes.fromhex(
-    "09e9000000230a670003ff"
+    "09e900000003aa670003ff"
 )  # foreign QN scale, code 0xE900
 # Synthetic: Etekcity frame for MAC CF:EA:01:28:86:45 with code 5
 EFSA591S_PAYLOAD = bytes.fromhex("0145862801eacf0005")
@@ -85,7 +85,7 @@ def test_detect_fit8s_by_model_code():
 def test_detect_esf24_by_qn_model_code():
     # No name needed: QN frame + MAC echo identifies it.
     assert (
-        detect_model(None, {QN: ESF24_PAYLOAD}, address="04:AC:44:0B:A5:9E")
+        detect_model(None, {QN: ESF24_PAYLOAD}, address="04:AC:44:0B:AA:07")
         == ScaleModel.ESF24
     )
 
@@ -100,7 +100,7 @@ def test_foreign_qn_scale_rejected():
     # A non-Etekcity QingNiu scale: name doesn't match "QN-Scale1" and its
     # model identifier (0xE900) is not in the registry.
     assert (
-        detect_model("QN-Scale", {QN: RENPHO_QN_PAYLOAD}, address="FF:03:00:67:0A:23")
+        detect_model("QN-Scale", {QN: RENPHO_QN_PAYLOAD}, address="FF:03:00:67:AA:03")
         is None
     )
 
@@ -136,9 +136,9 @@ def test_unknown_device_returns_none():
 def test_qn_frame_dynamic_bytes_ignored():
     # Same ESF-24 unit, different bytes 3-4 across captures (issue #11):
     # the identifier at bytes 1-2 and the MAC echo are all that matter.
-    for h in ("01260101019ea50b44ac04", "01260100029ea50b44ac04"):
+    for h in ("012601010107aa0b44ac04", "012601000207aa0b44ac04"):
         assert (
-            detect_model(None, {QN: bytes.fromhex(h)}, address="04:AC:44:0B:A5:9E")
+            detect_model(None, {QN: bytes.fromhex(h)}, address="04:AC:44:0B:AA:07")
             == ScaleModel.ESF24
         )
 
@@ -166,7 +166,7 @@ def test_is_etekcity_frame():
     assert is_etekcity_frame(bytes.fromhex("01be213329e74800b1"))
     # MAC-echo mismatch or wrong shape: rejected.
     assert not is_etekcity_frame(ESF551_PAYLOAD, "AA:BB:CC:DD:EE:FF")
-    assert not is_etekcity_frame(RENPHO_QN_PAYLOAD, "FF:03:00:67:0A:23")
+    assert not is_etekcity_frame(RENPHO_QN_PAYLOAD, "FF:03:00:67:AA:03")
     assert not is_etekcity_frame(b"\x01\x62")
 
 
@@ -246,9 +246,7 @@ def test_unrecognized_qn_identifier_logged(caplog):
     # Symmetric with the Etekcity family: a QN-frame device that a fallback
     # matcher still identifies gets its unknown identifier logged too.
     detection_module._reported_identifiers.clear()
-    # Synthetic QN frame: header 0x01, identifier 9730 (not in the registry),
-    # MAC echo for 04:AC:44:0B:B3:65 (matches the ESF-24 OUI matcher).
-    payload = bytes.fromhex("012602000065b30b44ac04")
+    payload = bytes.fromhex("022602000065b30b44ac04")
     with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
         assert (
             detect_model(None, {QN: payload}, address="04:AC:44:0B:B3:65")
