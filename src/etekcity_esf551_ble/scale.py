@@ -225,9 +225,20 @@ class GattScale(EtekcitySmartFitnessScale, abc.ABC):
 
     On detecting the target scale's advertisement a connection is established and
     model-specific setup runs in :meth:`_start_scale_session`; measurements then
-    arrive via :meth:`_notification_handler`. An optional cooldown period ignores
+    arrive via :meth:`_notification_handler`. A cooldown period ignores
     advertisements for a while after a disconnection.
+
+    Unlike the advertisement transport, connecting is the *default* response to
+    every advertisement here, and a scale keeps advertising for a few seconds
+    after a measurement while it spins down — rejecting connections the whole
+    time. Each of those stragglers would otherwise start a futile connect cycle
+    that ends in a retry storm, so GATT scales default to a short window rather
+    than the transport-level 0. It is short enough to leave an intentional
+    re-weigh unaffected; callers that want a different trade-off pass their own.
     """
+
+    #: Default cooldown for GATT models, in seconds. See the class docstring.
+    DEFAULT_COOLDOWN_SECONDS = 5
 
     def __init__(
         self,
@@ -237,15 +248,17 @@ class GattScale(EtekcitySmartFitnessScale, abc.ABC):
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend: BaseBleakScanner = None,
-        cooldown_seconds: int = 0,
+        cooldown_seconds: int = DEFAULT_COOLDOWN_SECONDS,
         logger: logging.Logger | None = None,
     ) -> None:
         """
         Initialize the GATT scale interface.
 
         Args:
-            cooldown_seconds: Optional cooldown period in seconds to ignore new
-                              advertisements after a disconnection.
+            cooldown_seconds: Cooldown period in seconds during which new
+                              advertisements are ignored after a disconnection.
+                              Defaults to :data:`DEFAULT_COOLDOWN_SECONDS`;
+                              0 disables the window.
 
         See :meth:`EtekcitySmartFitnessScale.__init__` for the remaining args.
         """

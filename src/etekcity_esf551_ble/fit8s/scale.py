@@ -31,10 +31,6 @@ class FIT8SScale(AdvertisementScale):
         bleak_scanner_backend: BaseBleakScanner = None,
         logger: logging.Logger | None = None,
         *,
-        # The scale re-broadcasts its final frame for the whole advertising
-        # burst; the window must outlast the burst to keep one callback per
-        # weigh-in. Err long — a genuine re-weigh needs step-off + re-tare +
-        # settle, which takes at least this long anyway.
         cooldown_seconds: int = 10,
     ) -> None:
         super().__init__(

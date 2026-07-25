@@ -48,7 +48,7 @@ class ESF24Scale(GattScale):
         scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE,
         adapter: str | None = None,
         bleak_scanner_backend=None,
-        cooldown_seconds: int = 0,
+        cooldown_seconds: int = GattScale.DEFAULT_COOLDOWN_SECONDS,
         logger: logging.Logger | None = None,
     ) -> None:
         enforced_unit = (
@@ -157,7 +157,10 @@ class ESF24Scale(GattScale):
     async def _safe_write(self, data: bytearray) -> None:
         """Write GATT char safely with error handling."""
         if not self._client:
-            self._logger.warning("ESF-24 cannot send command; no active client")
+            # Benign: writes are scheduled from the notification handler while
+            # the connection is live, so this only fires when a disconnect wins
+            # the race to the next event-loop tick. Nothing to act on.
+            self._logger.debug("ESF-24 cannot send command; no active client")
             return
         if not (
             command_char := self._client.services.get_characteristic(

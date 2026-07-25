@@ -6,6 +6,7 @@ import pytest
 from bleak.backends.device import BLEDevice
 
 from src.etekcity_esf551_ble import (
+    EFSA591SScale,
     ESF24Scale,
     ESF551Scale,
     EtekcitySmartFitnessScale,
@@ -209,6 +210,43 @@ async def test_esf24_scale_set_display_unit():
 
     with pytest.raises(ValueError):
         scale.display_unit = None
+
+
+@pytest.mark.asyncio
+async def test_gatt_models_default_to_a_reconnect_cooldown():
+    """GATT scales connect on every advertisement, so they need a window.
+
+    Without one, the stragglers a scale keeps emitting while it spins down
+    after a measurement each start a futile connect cycle.
+    """
+    for cls in (ESF551Scale, ESF24Scale, EFSA591SScale):
+        scale = cls("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
+        assert scale._cooldown_seconds == 5, cls.__name__
+
+
+@pytest.mark.asyncio
+async def test_cooldown_default_is_overridable():
+    """Callers that know better (e.g. Home Assistant) can widen the window."""
+    scale = ESF551Scale(
+        "00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock(), cooldown_seconds=10
+    )
+    assert scale._cooldown_seconds == 10
+
+
+@pytest.mark.asyncio
+async def test_esf24_write_without_client_is_not_a_warning():
+    """Losing the write race with a disconnect is benign, not warning-worthy."""
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock(), logger=logger
+    )
+
+    await scale._safe_write(bytearray(b"\x00"))
+
+    logger.warning.assert_not_called()
+    assert any(
+        "no active client" in call.args[0] for call in logger.debug.call_args_list
+    )
 
 
 @pytest.mark.asyncio

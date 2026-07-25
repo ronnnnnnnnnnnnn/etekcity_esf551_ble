@@ -166,7 +166,7 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 
 **Company ID 1744 (Etekcity platform):** `[0]=0x01, [1:7]=device MAC little-endian, [7:9]=model identifier BE16, [9:]=model-specific payload`
 
-**Company ID 65535 (QingNiu platform, ESF-24):** `[0]=frame header, [1:3]=model identifier BE16, [3:5]=unknown, [5:11]=device MAC little-endian`
+**Company ID 65535 (QN platform, ESF-24):** `[0]=frame header, [1:3]=model identifier BE16, [3:5]=unknown, [5:11]=device MAC little-endian`
 
 | Model | Company | Codes |
 |---|---|---|
@@ -221,7 +221,7 @@ Experimental implementation for EFS-A591S (Apex HR) scales. Uses an encrypted pr
 #### Common Methods:
 
 - `__init__(self, address: str, notification_callback: Callable[[ScaleData], None], display_unit: WeightUnit = None, scanning_mode: BluetoothScanningMode = BluetoothScanningMode.ACTIVE, adapter: str | None = None, bleak_scanner_backend: BaseBleakScanner = None, logger: logging.Logger | None = None)`
-  - GATT-based scales (`ESF551Scale`, `ESF24Scale`, `EFSA591SScale`) additionally accept `cooldown_seconds: int = 0` — ignore advertisements for that many seconds after a disconnection. It does not apply to advertisement-based scales such as `FIT8SScale`.
+  - GATT-based scales (`ESF551Scale`, `ESF24Scale`, `EFSA591SScale`) additionally accept `cooldown_seconds: int = 5` — ignore advertisements for that many seconds after a disconnection.
 - `async_start()`: Start scanning for the scale (GATT-based models connect on detection).
 - `async_stop()`: Stop scanning and disconnect.
 
