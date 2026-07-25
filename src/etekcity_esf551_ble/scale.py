@@ -22,8 +22,6 @@ from bleak_retry_connector import establish_connection
 from .data import BluetoothScanningMode, ScaleData, WeightUnit
 
 
-_LOGGER = logging.getLogger(__name__)
-
 SYSTEM = platform.system()
 IS_LINUX = SYSTEM == "Linux"
 IS_MACOS = SYSTEM == "Darwin"
@@ -91,7 +89,10 @@ class EtekcitySmartFitnessScale(abc.ABC):
             cooldown_seconds: Length of the cooldown window during which
                               advertisements are ignored. 0 disables the window.
         """
-        self._logger = logger or _LOGGER
+        # Default to the concrete model's own module logger so callers can keep
+        # filtering per model (etekcity_esf551_ble.esf24.scale and friends); an
+        # injected logger replaces it everywhere, base class and model alike.
+        self._logger = logger or logging.getLogger(type(self).__module__)
         self._logger.info(
             f"Initializing EtekcitySmartFitnessScale for address: {address}"
         )

@@ -1,14 +1,17 @@
 """Integration tests for the complete scale workflow."""
 
 import asyncio
-from datetime import date
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from src.etekcity_esf551_ble import ESF24Scale, ESF551Scale
-from src.etekcity_esf551_ble.esf551.scale import ESF551ScaleWithBodyMetrics
-from src.etekcity_esf551_ble.body_metrics import Sex
+from src.etekcity_esf551_ble import (
+    IMPEDANCE_KEY,
+    WEIGHT_KEY,
+    ESF24Scale,
+    ESF551Scale,
+)
+from src.etekcity_esf551_ble.body_metrics import BodyMetrics, Sex
 
 
 def _mock_scanner():
@@ -74,7 +77,7 @@ async def test_esf24_kg_only_workflow():
 
 @pytest.mark.asyncio
 async def test_body_metrics_integration():
-    """Test body metrics integration with ESF-551 scale."""
+    """A delivered reading's weight and impedance feed BodyMetrics."""
     callback = Mock()
 
     with patch(
@@ -85,13 +88,7 @@ async def test_body_metrics_integration():
         mock_scanner_class, _ = _mock_scanner()
         mock_get_scanner.return_value = (mock_scanner_class, None)
 
-        body_scale = ESF551ScaleWithBodyMetrics(
-            "00:11:22:33:44:55",
-            callback,
-            Sex.Male,
-            date(1990, 1, 1),
-            1.75,
-        )
+        scale = ESF551Scale("00:11:22:33:44:55", callback)
 
         mock_parse.return_value = {
             "weight": 75.0,
@@ -99,13 +96,20 @@ async def test_body_metrics_integration():
             "display_unit": 0,
         }
 
-        body_scale._notification_handler(
-            "char", b"test_data", "test_name", "test_address"
-        )
+        scale._notification_handler("char", b"test_data", "test_name", "test_address")
         callback.assert_called_once()
 
-        call_args = callback.call_args[0][0]
-        assert call_args.measurements["weight"] == 75.0
-        assert call_args.measurements["impedance"] == 500
-        assert "body_mass_index" in call_args.measurements
-        assert "body_fat_percentage" in call_args.measurements
+        measurements = callback.call_args[0][0].measurements
+        assert measurements[WEIGHT_KEY] == 75.0
+        assert measurements[IMPEDANCE_KEY] == 500
+
+    body_metrics = BodyMetrics(
+        weight_kg=measurements[WEIGHT_KEY],
+        height_m=1.75,
+        age=35,
+        sex=Sex.Male,
+        impedance=measurements[IMPEDANCE_KEY],
+    )
+    assert body_metrics.body_mass_index > 0
+    assert 5 <= body_metrics.body_fat_percentage <= 75
+    assert body_metrics.basal_metabolic_rate > 900

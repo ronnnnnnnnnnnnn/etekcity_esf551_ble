@@ -217,7 +217,7 @@ CAPABILITIES: dict[ScaleModel, ScaleCapabilities] = {
         has_impedance=True, has_heart_rate=False, display_unit_settable=True
     ),
     ScaleModel.ESF24: ScaleCapabilities(
-        has_impedance=False, has_heart_rate=False, display_unit_settable=True
+        has_impedance=True, has_heart_rate=False, display_unit_settable=True
     ),
     ScaleModel.FIT8S: ScaleCapabilities(
         has_impedance=True, has_heart_rate=False, display_unit_settable=False

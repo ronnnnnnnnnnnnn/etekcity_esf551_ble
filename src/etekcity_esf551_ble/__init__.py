@@ -1,8 +1,9 @@
 from ._version import __version__, __version_info__
-from .body_metrics import BodyMetrics, Sex
+from .body_metrics import BodyMetrics, Sex, calc_age
 from .const import (
     DISPLAY_UNIT_KEY,
     HEART_RATE_KEY,
+    IMPEDANCE_500KHZ_KEY,
     IMPEDANCE_KEY,
     WEIGHT_KEY,
 )
@@ -24,7 +25,6 @@ from .detection import (
 from .efsa591s import EFSA591SScale
 from .esf24 import ESF24Scale
 from .esf551 import ESF551Scale
-from .esf551.scale import ESF551ScaleWithBodyMetrics
 from .fit8s import FIT8SScale
 from .scale import (
     AdvertisementScale,
@@ -50,15 +50,16 @@ __all__ = [
     "ESF551Scale",
     "ESF24Scale",
     "FIT8SScale",
-    "ESF551ScaleWithBodyMetrics",
     "EFSA591SScale",
     "WeightUnit",
     "ScaleData",
     "HEART_RATE_KEY",
+    "IMPEDANCE_500KHZ_KEY",
     "IMPEDANCE_KEY",
     "WEIGHT_KEY",
     "BodyMetrics",
     "Sex",
+    "calc_age",
     "BluetoothScanningMode",
     "DISPLAY_UNIT_KEY",
     "CAPABILITIES",

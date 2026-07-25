@@ -213,7 +213,7 @@ def test_every_model_has_capabilities():
 
 
 def test_capability_flags():
-    assert CAPABILITIES[ScaleModel.ESF24].has_impedance is False
+    assert CAPABILITIES[ScaleModel.ESF24].has_impedance is True
     assert CAPABILITIES[ScaleModel.ESF551].has_impedance is True
     assert CAPABILITIES[ScaleModel.FIT8S].has_impedance is True
     assert CAPABILITIES[ScaleModel.EFSA591S].has_impedance is True

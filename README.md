@@ -5,11 +5,11 @@ This package provides a basic unofficial interface for interacting with Etekcity
 ## Features
 
 - **ESF-551**: Fully supported and stable (weight, impedance, body metrics, display unit management)
-- **ESF-24**: Experimental support (weight, unit changes)
+- **ESF-24**: Experimental support (weight, impedance, body metrics, unit changes)
 - **FIT-8S**: Experimental support (weight, impedance, body metrics)
 - **EFS-A591S (Apex HR)**: Experimental support (weight, impedance, heart rate, body metrics, unit changes)
 - Easy connection and notification handling
-- Body composition metrics via the `BodyMetrics` calculator — works with any impedance-capable scale (ESF-551, EFS-A591S and FIT-8S only)
+- Body composition metrics via the `BodyMetrics` calculator — works with any impedance-capable scale, with optional athlete mode
 - Display unit management (ESF-551, EFS-A591S and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
 
 ## Supported Models
@@ -18,7 +18,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 |-------|--------|----------|
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
 | EFS-A591S | 🔬 Experimental | Weight, impedance, heart rate, body metrics, unit changes |
-| ESF-24 | 🔬 Experimental | Weight, unit changes |
+| ESF-24 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
 | FIT-8S | 🔬 Experimental | Weight, impedance, body metrics |
 
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand) or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
@@ -58,14 +58,15 @@ async def main():
         if IMPEDANCE_KEY in data.measurements:
             print(f"Impedance: {data.measurements[IMPEDANCE_KEY]} Ω")
 
-            # Calculate body metrics (ESF-551, EFS-A591S and FIT-8S only)
+            # Calculate body metrics (any impedance-capable scale)
             # Note: Replace with your actual height, age and sex
             body_metrics = BodyMetrics(
                 weight_kg=data.measurements[WEIGHT_KEY],
-                height_m=1.75,  # Example height
-                age=30,  # Example age
-                sex=Sex.Male,  # Example sex
-                impedance=data.measurements[IMPEDANCE_KEY]
+                height_m=1.75,
+                age=30,
+                sex=Sex.Male,
+                impedance=data.measurements[IMPEDANCE_KEY],
+                athlete=False,
             )
             print(f"Body Mass Index: {body_metrics.body_mass_index:.2f}")
             print(f"Body Fat Percentage: {body_metrics.body_fat_percentage:.1f}%")
@@ -207,7 +208,7 @@ Implementation for ESF-551 scales with full feature support.
 
 #### `ESF24Scale`
 
-Experimental implementation for ESF-24 scales (weight only).
+Experimental implementation for ESF-24 scales. Reports weight and dual-band BIA impedance: the 50 kHz value under `IMPEDANCE_KEY` (usable with `BodyMetrics`) and the raw 500 kHz value under `IMPEDANCE_500KHZ_KEY` (ESF-24 only).
 
 #### `FIT8SScale`
 
@@ -249,15 +250,16 @@ A dataclass containing scale measurement data:
 - `hw_version`: Hardware version
 - `sw_version`: Software version
 - `display_unit`: Current display unit (concerns only the weight as displayed on the scale, the measurement itself is always provided by the API in kilograms)
-- `measurements`: Dictionary of measurements (currently supports: weight in kilograms, impedance in ohms and heart rate in bpm)
+- `measurements`: Dictionary of measurements (currently supports: weight in kilograms, impedance in ohms — plus a second 500 kHz impedance under `IMPEDANCE_500KHZ_KEY` on the ESF-24 — and heart rate in bpm)
 
 ### `BodyMetrics`
 
-A class for calculating various body composition metrics based on height, age, sex and the weight and impedance as measured by the scale, similar to the metrics calculated and shown in the VeSync app. Note that currently "Athlete Mode" is not supported.
+A class for calculating various body composition metrics based on height, age, sex and the weight and impedance as measured by the scale, similar to the metrics calculated and shown in the VeSync app.
 
 #### Methods:
 
-- `__init__(self, weight_kg: float, height_m: float, age: int, sex: Sex, impedance: int)`
+- `__init__(self, weight_kg: float, height_m: float, age: int, sex: Sex, impedance: int, athlete: bool = False)`
+- `as_dict(self) -> dict[str, int | float]`: All of the calculated metrics below, keyed by property name. The constructor inputs are not included.
 
 #### Properties:
 
@@ -277,6 +279,26 @@ A class for calculating various body composition metrics based on height, age, s
 - `bmi_score`: Calculated BMI score (0-100)
 - `health_score`: Overall health score based on other metrics (0-100)
 - `metabolic_age`: Estimated metabolic age in years
+
+### `calc_age`
+
+`calc_age(birthdate: date) -> int`
+
+Age in whole years as of today, counted the way the scale's app counts it: a birthday that hasn't occurred yet this year isn't counted. Convenient for the `age` argument of `BodyMetrics`.
+
+```python
+from datetime import date
+from etekcity_esf551_ble import BodyMetrics, Sex, calc_age
+
+body_metrics = BodyMetrics(
+    weight_kg=75.0,
+    height_m=1.75,
+    age=calc_age(date(1990, 5, 17)),
+    sex=Sex.Male,
+    impedance=500,
+)
+print(body_metrics.as_dict())
+```
 
 ### `Sex`
 

@@ -93,6 +93,113 @@ async def test_esf551_scale_set_display_unit():
 
 
 @pytest.mark.asyncio
+async def test_esf24_notification_handler_delivers_weight_and_impedance():
+    """A final ESF-24 frame reaches the callback with both impedance bands."""
+    callback = Mock()
+    scale = ESF24Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
+
+    # Capture-verified final frame: 110.80 kg, 363 Ω at 50 kHz, 308 Ω at 500 kHz.
+    scale._notification_handler(
+        "char", bytearray.fromhex("100b152b4801016b013445"), "QN-Scale1", "test_address"
+    )
+
+    callback.assert_called_once()
+    scale_data = callback.call_args[0][0]
+    assert scale_data.measurements["weight"] == 110.80
+    assert scale_data.measurements["impedance"] == 363
+    assert scale_data.measurements["impedance_500khz"] == 308
+    assert scale_data.display_unit == WeightUnit.KG
+    assert scale_data.address == "test_address"
+
+
+@pytest.mark.asyncio
+async def test_esf24_settling_frames_are_logged_once_per_session():
+    """A weigh-in streams dozens of settling frames; only the first is announced."""
+    callback = Mock()
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55", callback, bleak_scanner_backend=Mock(), logger=logger
+    )
+    settling = bytearray.fromhex("100b152b4800016b013445")
+
+    for _ in range(5):
+        scale._notification_handler("char", settling, "QN-Scale1", "test_address")
+
+    callback.assert_not_called()
+    # Announced once, and never as unrecognized: these frames are understood.
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert sum("settling" in m for m in messages) == 1
+    assert not any("unrecognized" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_esf24_unrecognized_payload_is_logged_as_unrecognized():
+    """A payload that is not a known frame is still reported as unrecognized."""
+    callback = Mock()
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55", callback, bleak_scanner_backend=Mock(), logger=logger
+    )
+
+    scale._notification_handler(
+        "char", bytearray.fromhex("aabbccdd"), "QN-Scale1", "test_address"
+    )
+
+    callback.assert_not_called()
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert sum("unrecognized" in m for m in messages) == 1
+
+
+@pytest.mark.asyncio
+async def test_esf24_logs_every_received_payload():
+    """Every frame is dumped at debug so a weigh-in can be reconstructed."""
+    callback = Mock()
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55", callback, bleak_scanner_backend=Mock(), logger=logger
+    )
+
+    frames = [
+        bytearray.fromhex("100b152b4800016b013445"),  # settling
+        bytearray.fromhex("100b152b4801016b013445"),  # final
+        bytearray.fromhex("ff0102"),  # not an ESF-24 frame at all
+    ]
+    for frame in frames:
+        scale._notification_handler("char", frame, "QN-Scale1", "test_address")
+
+    rx = [c for c in logger.debug.call_args_list if "RX payload" in c.args[0]]
+    assert [c.args[1] for c in rx] == [frame.hex() for frame in frames]
+
+
+@pytest.mark.asyncio
+async def test_injected_logger_receives_model_specific_messages():
+    """The logger argument covers model messages, not just base-class ones."""
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock(), logger=logger
+    )
+
+    scale._notification_handler(
+        "char", bytearray.fromhex("ff0102"), "QN-Scale1", "test_address"
+    )
+
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert any("RX payload" in m for m in messages)
+    assert any("unrecognized" in m for m in messages)
+
+
+def test_default_logger_keeps_each_models_own_module_name():
+    """Without an injected logger, models stay on their own logger names."""
+    esf24 = ESF24Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
+    esf551 = ESF551Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
+    fit8s = FIT8SScale(_FIT8S_ADDRESS, Mock(), bleak_scanner_backend=Mock())
+
+    assert esf24._logger.name.endswith("esf24.scale")
+    assert esf551._logger.name.endswith("esf551.scale")
+    assert fit8s._logger.name.endswith("fit8s.scale")
+
+
+@pytest.mark.asyncio
 async def test_esf24_scale_set_display_unit():
     """Test ESF-24 display unit enforcement."""
     scale = ESF24Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())

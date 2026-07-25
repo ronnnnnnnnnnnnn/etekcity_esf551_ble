@@ -15,7 +15,13 @@ class BodyMetrics:
     """
 
     def __init__(
-        self, weight_kg: float, height_m: float, age: int, sex: Sex, impedance: int
+        self,
+        weight_kg: float,
+        height_m: float,
+        age: int,
+        sex: Sex,
+        impedance: int,
+        athlete: bool = False,
     ):
         """
         Initialize body metrics calculator.
@@ -26,12 +32,16 @@ class BodyMetrics:
             age: Age in years
             sex: Biological sex (Male or Female)
             impedance: Bioelectrical impedance measurement from the scale in ohms
+            athlete: Athletic body type flag (default: False)
+                     Adjusts the body fat percentage (and, through it, every
+                     downstream metric) for athletic body types.
         """
         self.weight = weight_kg
         self.height = height_m
         self.age = age
         self.sex = sex
         self.impedance = impedance
+        self.athlete = athlete
 
     @cached_property
     def body_mass_index(self) -> float:
@@ -60,18 +70,20 @@ class BodyMetrics:
         constant = [22, 12.7]
 
         bfp = (
-            floor(
-                (
-                    age_factor[self.sex] * self.age
-                    + bmi_factor[self.sex] * self.body_mass_index
-                    - 500 / self.impedance
-                    - constant[self.sex]
-                )
-                * 10
-            )
-            / 10
+            age_factor[self.sex] * self.age
+            + bmi_factor[self.sex] * self.body_mass_index
+            - 500 / self.impedance
+            - constant[self.sex]
         )
-        return max(5, min(75, bfp))
+        if self.athlete:
+            base_divisor = [3.5, 3.0]
+            bmi_divisor = [3.0, 2.4]
+            bfp = (
+                bfp / base_divisor[self.sex]
+                + self.body_mass_index / bmi_divisor[self.sex]
+            )
+
+        return max(5, min(75, floor(bfp * 10) / 10))
 
     @cached_property
     def fat_free_weight(self) -> float:
@@ -353,8 +365,37 @@ class BodyMetrics:
 
         return max(18, self.age + 8 - age_adjustment_factor)
 
+    def as_dict(self) -> dict[str, int | float]:
+        """
+        Return every calculated metric, keyed by its property name.
 
-def _calc_age(birthdate: date) -> int:
+        Only the calculated metrics are included. The constructor inputs
+        (weight, height, age, sex, impedance, athlete) are not metrics and
+        are deliberately left out.
+
+        Returns:
+            dict: Metric name -> value, for every metric this class exposes.
+        """
+        return {
+            name: getattr(self, name)
+            for name in dir(type(self))
+            if isinstance(getattr(type(self), name, None), cached_property)
+        }
+
+
+def calc_age(birthdate: date) -> int:
+    """
+    Calculate age in years as of today, the way the scale's app counts it.
+
+    Full years only: someone whose birthday has not yet occurred this year
+    counts as a year younger. Handy for the `age` argument of `BodyMetrics`.
+
+    Args:
+        birthdate: The person's date of birth.
+
+    Returns:
+        int: Age in whole years.
+    """
     today = date.today()
     years = today.year - birthdate.year
     if today.month < birthdate.month or (
@@ -362,7 +403,3 @@ def _calc_age(birthdate: date) -> int:
     ):
         years -= 1
     return years
-
-
-def _as_dictionary(obj: BodyMetrics) -> dict[str, int | float]:
-    return {prop: getattr(obj, prop) for prop in dir(obj) if not prop.startswith("__")}

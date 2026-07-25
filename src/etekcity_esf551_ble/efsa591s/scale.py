@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 
@@ -18,8 +16,6 @@ from ..const import (
 from ..scale import GattScale
 from ..data import ScaleData, WeightUnit
 from . import protocol as a5
-
-_LOGGER = logging.getLogger(__name__)
 
 # Frames the scale emits that carry no data we use (status/flag/ack frames).
 # Ignored silently so they don't spam the debug log.
@@ -56,11 +52,11 @@ class EFSA591SScale(GattScale):
 
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
         try:
-            _LOGGER.debug(
+            self._logger.debug(
                 "EFS-A591S session for %s (%s)", ble_device.name, ble_device.address
             )
             if ":" not in self.address:
-                _LOGGER.error(
+                self._logger.error(
                     "EFS-A591S needs the device MAC for key derivation; got '%s'. "
                     "This platform does not expose a MAC (e.g. macOS).",
                     self.address,
@@ -74,7 +70,7 @@ class EFSA591SScale(GattScale):
                 ALIRO_CHARACTERISTIC_UUID
             )
             if not notify_char or not self._write_char:
-                _LOGGER.error("EFS-A591S required characteristics not found")
+                self._logger.error("EFS-A591S required characteristics not found")
                 return
 
             # Reset per-session crypto state
@@ -92,11 +88,11 @@ class EFSA591SScale(GattScale):
             # Kick off the DH key exchange
             self._dh = a5.generate_dh()
             frame = a5.build_key_exchange(self._next_seq(), self.address, self._dh)
-            _LOGGER.debug("EFS-A591S sending key exchange: %s", frame.hex())
+            self._logger.debug("EFS-A591S sending key exchange: %s", frame.hex())
             await self._send_frame(frame)
 
         except Exception as ex:
-            _LOGGER.exception(
+            self._logger.exception(
                 "EFS-A591S session setup failed: %s(%s)", type(ex), ex.args
             )
             self._client = None
@@ -126,7 +122,7 @@ class EFSA591SScale(GattScale):
             try:
                 self._handle_frame(frame, name, address)
             except Exception as ex:  # pragma: no cover - defensive
-                _LOGGER.debug("EFS-A591S frame handling error: %s", ex)
+                self._logger.debug("EFS-A591S frame handling error: %s", ex)
 
     def _handle_frame(self, frame: bytes, name: str, address: str) -> None:
         parsed = a5.parse_frame(frame)
@@ -140,7 +136,7 @@ class EFSA591SScale(GattScale):
             shared = a5.compute_shared(h, self._dh.g, self._dh.d)
             self._key = a5.derive_key(shared, self.address)
             self._iv = a5.random_iv()
-            _LOGGER.debug("EFS-A591S key established (h=%d), sending verify", h)
+            self._logger.debug("EFS-A591S key established (h=%d), sending verify", h)
             verify = a5.build_key_verify(
                 self._next_seq(), self.address, self._iv, self._key
             )
@@ -177,7 +173,7 @@ class EFSA591SScale(GattScale):
             # only the finalized measurement is delivered to Home Assistant.
             return
         elif parsed.opcode not in _STATUS_OPCODES:
-            _LOGGER.debug(
+            self._logger.debug(
                 "EFS-A591S unhandled opcode 0x%04x: %s", parsed.opcode, frame.hex()
             )
 
