@@ -23,10 +23,10 @@ FIT8S_PAYLOAD = bytes.fromhex("0163a0ed5d89a9c0a901563a0100000100020300")  # cod
 PURIFIER_PAYLOAD = bytes.fromhex(
     "018e31e5519140c623020202"
 )  # air purifier, code 0xC623
-ESF24_PAYLOAD = bytes.fromhex("012601000607aa0b44ac04")  # QN frame, code 9729
+ESF24_PAYLOAD = bytes.fromhex("012601000607aa0b44ac04")  # QN frame, code 0x0126
 RENPHO_QN_PAYLOAD = bytes.fromhex(
     "09e900000003aa670003ff"
-)  # foreign QN scale, code 0xE900
+)  # foreign QN scale, code 0x09E9
 # Synthetic: Etekcity frame for MAC CF:EA:01:28:86:45 with code 5
 EFSA591S_PAYLOAD = bytes.fromhex("0145862801eacf0005")
 
@@ -52,6 +52,28 @@ def test_parse_model_code_reads_be16_at_offset_7():
     assert parse_model_code(FIT8S_PAYLOAD) == 49321
     assert parse_model_code(PURIFIER_PAYLOAD) == 0xC623
     assert parse_model_code(EFSA591S_PAYLOAD) == 5
+
+
+def test_registry_covers_known_variants():
+    # Every registered regional/hardware variant resolves on its identifier
+    # alone, without needing a name or address fallback. The MAC deliberately
+    # matches no OUI matcher, so a code missing from the registry fails here
+    # instead of being rescued by a fallback.
+    mac = "AA:BB:CC:11:22:33"
+    reversed_mac = bytes(int(o, 16) for o in mac.split(":"))[::-1]
+    expected = {
+        (ScaleModel.ESF551, MFR): (1, 2),
+        (ScaleModel.EFSA591S, MFR): (3, 5, 127, 134),
+        (ScaleModel.FIT8S, MFR): (49321,),
+        (ScaleModel.ESF24, QN): (294,),
+    }
+    for (model, mfr_id), codes in expected.items():
+        for code in codes:
+            if mfr_id == MFR:
+                payload = b"\x01" + reversed_mac + code.to_bytes(2, "big")
+            else:
+                payload = code.to_bytes(2, "big") + b"\x01\x00\x06" + reversed_mac
+            assert detect_model(None, {mfr_id: payload}, address=mac) == model, code
 
 
 def test_parse_model_code_rejects_short_payloads():
@@ -98,7 +120,7 @@ def test_qn_frame_requires_mac_echo():
 
 def test_foreign_qn_scale_rejected():
     # A non-Etekcity QingNiu scale: name doesn't match "QN-Scale1" and its
-    # model identifier (0xE900) is not in the registry.
+    # model identifier (0x09E9) is not in the registry.
     assert (
         detect_model("QN-Scale", {QN: RENPHO_QN_PAYLOAD}, address="FF:03:00:67:AA:03")
         is None
@@ -135,7 +157,9 @@ def test_unknown_device_returns_none():
 
 def test_qn_frame_dynamic_bytes_ignored():
     # Same ESF-24 unit, different bytes 3-4 across captures (issue #11):
-    # the identifier at bytes 1-2 and the MAC echo are all that matter.
+    # the identifier at bytes 0-1 and the MAC echo are all that matter.
+    # Byte 4 is the scale's pending stored-record count, so it varies with
+    # the device's state rather than being noise.
     for h in ("012601010107aa0b44ac04", "012601000207aa0b44ac04"):
         assert (
             detect_model(None, {QN: bytes.fromhex(h)}, address="04:AC:44:0B:AA:07")
@@ -147,13 +171,15 @@ def test_unrecognized_variant_logs_identifier(caplog):
     # ESF-551-style frame with an identifier not in the registry: the name
     # matcher still detects it, and the identifier is logged for reporting.
     detection_module._reported_identifiers.clear()
-    payload = bytes.fromhex("0162291c004dd00001")  # identifier 1
+    # Identifier 4 is not assigned to any known model, so it stays a safe
+    # stand-in for an unregistered variant.
+    payload = bytes.fromhex("0162291c004dd00004")
     with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
         assert (
             detect_model("Etekcity Smart Fitness Scale", {MFR: payload})
             == ScaleModel.ESF551
         )
-    assert "unrecognized model identifier 1" in caplog.text
+    assert "unrecognized model identifier 4" in caplog.text
 
 
 def test_is_etekcity_frame():
@@ -246,6 +272,8 @@ def test_unrecognized_qn_identifier_logged(caplog):
     # Symmetric with the Etekcity family: a QN-frame device that a fallback
     # matcher still identifies gets its unknown identifier logged too.
     detection_module._reported_identifiers.clear()
+    # Synthetic QN frame: identifier 0x0226 (not in the registry), with a MAC
+    # echo matching the address below so it clears the trust anchor.
     payload = bytes.fromhex("022602000065b30b44ac04")
     with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
         assert (
@@ -253,4 +281,4 @@ def test_unrecognized_qn_identifier_logged(caplog):
             == ScaleModel.ESF24
         )
         detect_model(None, {QN: payload}, address="04:AC:44:0B:B3:65")
-    assert caplog.text.count("unrecognized model identifier 9730") == 1
+    assert caplog.text.count("unrecognized model identifier 550") == 1

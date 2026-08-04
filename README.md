@@ -166,14 +166,14 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 
 **Company ID 1744 (Etekcity platform):** `[0]=0x01, [1:7]=device MAC little-endian, [7:9]=model identifier BE16, [9:]=model-specific payload`
 
-**Company ID 65535 (QN platform, ESF-24):** `[0]=frame header, [1:3]=model identifier BE16, [3:5]=unknown, [5:11]=device MAC little-endian`
+**Company ID 65535 (QN platform, ESF-24):** `[0:2]=model identifier BE16, [2]=0x01, [3]=varies (undecoded), [4]=pending stored-record count, [5:11]=device MAC little-endian`
 
 | Model | Company | Codes |
 |---|---|---|
-| ESF-551 | 1744 | 2 |
-| EFS-A591S | 1744 | 3, 5, 127, 134 |
-| FIT-8S | 1744 | 49321 |
-| ESF-24 | 65535 | 9729 |
+| ESF-551 | 1744 | 1 (0x0001), 2 (0x0002) |
+| EFS-A591S | 1744 | 3 (0x0003), 5 (0x0005), 127 (0x007F), 134 (0x0086) |
+| FIT-8S | 1744 | 49321 (0xC0A9) |
+| ESF-24 | 65535 | 294 (0x0126) |
 
 Identifiers are compared as the full 16-bit value, with frame-shape and MAC-echo validation. Codes for other variants are added as units are reported — when a name/address fallback matcher identifies a device whose identifier isn't in the registry yet, `detect_model` logs the identifier so it can be reported and added to the registry — and those fallback matchers cover unlisted variants in the meantime.
 

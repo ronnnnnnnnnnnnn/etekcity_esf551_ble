@@ -11,8 +11,10 @@ Company ID 1744 (Etekcity platform)::
 
 Company ID 65535 (QN platform, used by the ESF-24)::
 
-    [0:2]  model identifier, 16-bit little-endian (QN convention)
-    [2:5]  unknown
+    [0:2]  model identifier, 16-bit big-endian
+    [2]    0x01 in all captures
+    [3]    varies across advertisements (undecoded)
+    [4]    pending stored-record count (varies with device state)
     [5:11] device MAC address, little-endian
 
 Company ID 65535 is a catch-all used by many vendors, so for that
@@ -33,7 +35,7 @@ ETEKCITY_MANUFACTURER_ID = 1744
 QN_MANUFACTURER_ID = 65535
 
 _ETEKCITY_MODEL_START = 7  # BE16 at bytes 7:9, after the embedded MAC
-_QN_MODEL_START = 0  # LE16 at bytes 0:2
+_QN_MODEL_START = 0  # BE16 at bytes 0:2
 _QN_MAC_SLICE = slice(5, 11)
 
 
@@ -107,12 +109,13 @@ def _parse_qn_model_code(payload: bytes, address: str | None) -> int | None:
         expected = _reversed_mac(address)
         if expected is not None and payload[_QN_MAC_SLICE] != expected:
             return None
-    return int.from_bytes(payload[_QN_MODEL_START : _QN_MODEL_START + 2], "little")
+    return int.from_bytes(payload[_QN_MODEL_START : _QN_MODEL_START + 2], "big")
 
 
 # Model-identifier registries. Unlisted/unknown variants are covered by FALLBACK_MATCHERS.
 # Add new codes here as units are reported.
 MODEL_CODES: dict[int, ScaleModel] = {
+    1: ScaleModel.ESF551,
     2: ScaleModel.ESF551,
     3: ScaleModel.EFSA591S,
     5: ScaleModel.EFSA591S,
@@ -122,7 +125,7 @@ MODEL_CODES: dict[int, ScaleModel] = {
 }
 
 QN_MODEL_CODES: dict[int, ScaleModel] = {
-    9729: ScaleModel.ESF24,
+    294: ScaleModel.ESF24,
 }
 
 # (company_id, identifier) pairs already reported via the fallback-path
