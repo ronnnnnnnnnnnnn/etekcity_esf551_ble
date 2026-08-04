@@ -2,11 +2,16 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from src.etekcity_esf551_ble.esf24.protocol import (
     _EPOCH_OFFSET,
     build_measurement_initiation_command,
+    build_stored_measurement_query,
     build_unit_update_command,
     is_measurement_frame,
+    is_stored_measurement_frame,
+    parse_stored_measurement,
     parse_weight,
 )
 from src.etekcity_esf551_ble.data import WeightUnit
@@ -100,6 +105,118 @@ def test_parsed_frame_feeds_body_metrics():
     )
     assert 5 <= metrics.body_fat_percentage <= 75
     assert metrics.basal_metabolic_rate > 900
+
+
+# --- Stored offline measurements (22 04 query / 23 14 records) -------------
+#
+# All frames below are real captured bytes from vendor-app sessions with an
+# ESF-24 (btsnoop capture, 2026-08-02 analysis). The scale answers the query
+# with one 0x23 record per offline reading; delivering a record deletes it
+# from the scale's store.
+
+
+def test_build_stored_measurement_query_matches_capture():
+    cmd = build_stored_measurement_query()
+    assert cmd.hex() == "2204153b"
+    assert cmd[-1] == sum(cmd[:-1]) & 0xFF
+
+
+@pytest.mark.parametrize(
+    "hx,count,index,ts_raw,weight,r1,r2",
+    [
+        # A six-record batch drained in one session...
+        ("2314150601013d5b302bb60000000000000000fd", 6, 1, 0x305B3D01, 111.90, 0, 0),
+        ("231415060232a15c3002d0000000000000000085", 6, 2, 0x305CA132, 7.20, 0, 0),
+        ("231415060387105e3002b200000000000000002e", 6, 3, 0x305E1087, 6.90, 0, 0),
+        ("231415060443836a3002c600000000000000007e", 6, 4, 0x306A8343, 7.10, 0, 0),
+        ("231415060509806e3002cb00000000000000004b", 6, 5, 0x306E8009, 7.15, 0, 0),
+        ("2314150606b9eb6e3002300000000000000000cc", 6, 6, 0x306EEBB9, 5.60, 0, 0),
+        # ...and a single-record store with a full BIA reading.
+        ("23141501016e6e73302b48016b013400000000e1", 1, 1, 0x30736E6E, 110.80, 363, 308),
+    ],
+)
+def test_parse_stored_measurement_decodes_captured_records(
+    hx, count, index, ts_raw, weight, r1, r2
+):
+    frame = parse_stored_measurement(bytearray.fromhex(hx))
+    assert frame.count == count
+    assert frame.index == index
+    assert frame.timestamp == ts_raw + _EPOCH_OFFSET
+    assert frame.weight_kg == weight
+    assert frame.resistance_1 == r1
+    assert frame.resistance_2 == r2
+
+
+def test_parse_stored_measurement_empty_store():
+    """count=0 means the store is empty; the other fields are meaningless."""
+    frame = parse_stored_measurement(
+        bytearray.fromhex("231415000000000000000000000000000000004c")
+    )
+    assert frame.count == 0
+
+
+def test_stored_record_measurements_match_live_final_frame():
+    # The core correctness check: the stored record and the live final frame
+    # from the same capture session describe the same reading, so they must
+    # decode to the same measurements (110.80 kg, 363 ohm, 308 ohm).
+    stored = parse_stored_measurement(
+        bytearray.fromhex("23141501016e6e73302b48016b013400000000e1")
+    )
+    live = parse_weight(bytearray.fromhex("100b152b4801016b013445"))
+    assert stored.measurements == live
+
+
+def test_stored_record_measurements_omit_unmeasured_resistances():
+    # Same "0 means not measured" rule as parse_weight: the batch records
+    # were taken without a BIA pass, so only weight is reported.
+    frame = parse_stored_measurement(
+        bytearray.fromhex("2314150601013d5b302bb60000000000000000fd")
+    )
+    assert frame.measurements == {"weight": 111.90}
+
+
+def test_parse_stored_measurement_rejects_bad_checksum():
+    good = bytearray.fromhex("23141501016e6e73302b48016b013400000000e1")
+    assert parse_stored_measurement(good) is not None
+
+    bad_trailer = good.copy()
+    bad_trailer[-1] ^= 0xFF
+    assert parse_stored_measurement(bad_trailer) is None
+
+    # A corrupted body byte invalidates the trailing sum just the same.
+    bad_body = good.copy()
+    bad_body[9] ^= 0x01
+    assert parse_stored_measurement(bad_body) is None
+
+
+def test_parse_stored_measurement_rejects_non_stored_frames():
+    # A live measurement frame, a truncated record, and renpho's 19-byte
+    # (len=0x13) record shape are all rejected outright.
+    assert parse_stored_measurement(bytearray.fromhex("100b152b4801016b013445")) is None
+    assert parse_stored_measurement(bytearray.fromhex("23141501016e6e7330")) is None
+    assert (
+        parse_stored_measurement(
+            bytearray.fromhex("2313ff04015dcdb6311cd901fc01f00000002e")
+        )
+        is None
+    )
+
+
+def test_is_stored_measurement_frame():
+    assert is_stored_measurement_frame(
+        bytearray.fromhex("23141501016e6e73302b48016b013400000000e1")
+    )
+    # count=0 (empty store) is still a stored-measurement frame.
+    assert is_stored_measurement_frame(
+        bytearray.fromhex("231415000000000000000000000000000000004c")
+    )
+    assert not is_stored_measurement_frame(
+        bytearray.fromhex("100b152b4801016b013445")
+    )
+    assert not is_stored_measurement_frame(bytearray.fromhex("23141501016e6e7330"))
+    assert not is_stored_measurement_frame(
+        bytearray.fromhex("2313ff04015dcdb6311cd901fc01f00000002e")
+    )
 
 
 def test_parse_weight_rejects_other_qn_frame_variants():

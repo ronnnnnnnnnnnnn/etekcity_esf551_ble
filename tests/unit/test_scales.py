@@ -1,5 +1,6 @@
 """Unit tests for scale classes."""
 
+import asyncio
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -131,6 +132,155 @@ async def test_esf24_settling_frames_are_logged_once_per_session():
     messages = [c.args[0] for c in logger.debug.call_args_list]
     assert sum("settling" in m for m in messages) == 1
     assert not any("unrecognized" in m for m in messages)
+
+
+# --- ESF-24 stored offline measurements -------------------------------------
+#
+# All frames are real captured bytes: the scale acks our set-time command
+# with 21 05 15 01 3c, we answer with the 22 04 15 3b query (when enabled),
+# and it drains its store as 0x23 records on the same notify characteristic
+# as live frames.
+
+_ESF24_SET_TIME_ACK = "210515013c"
+_ESF24_STORED_SINGLE = "23141501016e6e73302b48016b013400000000e1"
+_ESF24_STORED_BATCH_1 = "2314150601013d5b302bb60000000000000000fd"
+_ESF24_STORED_EMPTY = "231415000000000000000000000000000000004c"
+
+
+@pytest.mark.asyncio
+async def test_esf24_set_time_ack_sends_stored_query_when_enabled():
+    """The stored query follows the set-time ack, once per session."""
+    scale = ESF24Scale(
+        "00:11:22:33:44:55",
+        Mock(),
+        bleak_scanner_backend=Mock(),
+        clear_stored_measurements=True,
+    )
+    scale._safe_write = AsyncMock()
+
+    for _ in range(3):
+        scale._notification_handler(
+            "char", bytearray.fromhex(_ESF24_SET_TIME_ACK), "QN-Scale1", "test_address"
+        )
+        await asyncio.sleep(0)
+
+    sent = [c.args[0].hex() for c in scale._safe_write.call_args_list]
+    assert sent == ["2204153b"]
+
+
+@pytest.mark.asyncio
+async def test_esf24_stored_query_not_sent_by_default():
+    """Flag off (the default): the ack is recognized but no query goes out."""
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock(), logger=logger
+    )
+    scale._safe_write = AsyncMock()
+
+    scale._notification_handler(
+        "char", bytearray.fromhex(_ESF24_SET_TIME_ACK), "QN-Scale1", "test_address"
+    )
+    await asyncio.sleep(0)
+
+    scale._safe_write.assert_not_called()
+    # Recognized, not lumped in with unknown payloads.
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert not any("unrecognized" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_esf24_stored_measurement_frames_never_fire_callback():
+    """Drained records are logged and discarded; a live final frame after
+    them still goes through untouched."""
+    callback = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55",
+        callback,
+        bleak_scanner_backend=Mock(),
+        clear_stored_measurements=True,
+    )
+    scale._safe_write = AsyncMock()
+
+    for hx in (_ESF24_STORED_BATCH_1, _ESF24_STORED_SINGLE, _ESF24_STORED_EMPTY):
+        scale._notification_handler(
+            "char", bytearray.fromhex(hx), "QN-Scale1", "test_address"
+        )
+    callback.assert_not_called()
+
+    scale._notification_handler(
+        "char", bytearray.fromhex("100b152b4801016b013445"), "QN-Scale1", "test_address"
+    )
+    assert callback.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_esf24_stored_frame_with_bad_checksum_is_discarded_with_warning():
+    callback = Mock()
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55",
+        callback,
+        bleak_scanner_backend=Mock(),
+        clear_stored_measurements=True,
+        logger=logger,
+    )
+
+    bad = bytearray.fromhex(_ESF24_STORED_SINGLE)
+    bad[-1] ^= 0xFF
+    scale._notification_handler("char", bad, "QN-Scale1", "test_address")
+
+    callback.assert_not_called()
+    logger.warning.assert_called_once()
+    # Distinct from the wrong-length warning, so a log says which check failed.
+    assert "checksum" in logger.warning.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_esf24_malformed_stored_frame_warns_rather_than_going_unrecognized():
+    """A 0x23 frame the parser can't accept is a protocol anomaly worth
+    surfacing — a firmware change to the record layout should not read as
+    one more unknown payload. Dispatch is by opcode so the handler sees it."""
+    callback = Mock()
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55",
+        callback,
+        bleak_scanner_backend=Mock(),
+        clear_stored_measurements=True,
+        logger=logger,
+    )
+
+    frames = (
+        "2314150401",  # truncated record
+        "2313ff04015dcdb6311cd901fc01f00000002e",  # renpho's 19-byte shape
+    )
+    for hx in frames:
+        scale._notification_handler(
+            "char", bytearray.fromhex(hx), "QN-Scale1", "test_address"
+        )
+
+    callback.assert_not_called()
+    warnings = [c.args[0] for c in logger.warning.call_args_list]
+    assert len(warnings) == len(frames)
+    assert all("length" in w for w in warnings), warnings
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert not any("unrecognized" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_esf24_empty_store_frame_is_not_unrecognized():
+    logger = Mock()
+    scale = ESF24Scale(
+        "00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock(), logger=logger
+    )
+
+    scale._notification_handler(
+        "char", bytearray.fromhex(_ESF24_STORED_EMPTY), "QN-Scale1", "test_address"
+    )
+
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert not any("unrecognized" in m for m in messages)
+    assert any("empty" in m for m in messages)
 
 
 @pytest.mark.asyncio

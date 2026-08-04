@@ -1,5 +1,6 @@
 import struct
 import time
+from typing import NamedTuple
 
 from ..const import IMPEDANCE_500KHZ_KEY, IMPEDANCE_KEY, WEIGHT_KEY
 from ..data import WeightUnit
@@ -93,3 +94,99 @@ def parse_weight(payload: bytearray) -> dict[str, int | float | None] | None:
     if resistance_2 := int.from_bytes(payload[8:10], "big"):
         data[IMPEDANCE_500KHZ_KEY] = resistance_2
     return data
+
+
+# --- Stored offline measurements (22 04 query / 23 14 records) --------------
+
+_STORED_MEASUREMENT_FRAME_PREFIX = b"\x23\x14\x15"
+_STORED_MEASUREMENT_FRAME_LENGTH = 20
+
+
+def build_stored_measurement_query() -> bytearray:
+    """Build the stored-measurement query (``22 04 15`` + checksum).
+
+    The scale answers with one 0x23 record per offline reading (or a
+    single ``count=0`` frame when the store is empty) — see
+    :func:`parse_stored_measurement`. Delivering a record deletes it from
+    the scale's store; there is no separate delete command.
+    """
+    cmd = bytearray(b"\x22\x04\x15")
+    cmd.append(sum(cmd) & 0xFF)
+    return cmd
+
+
+def is_stored_measurement_frame(payload: bytearray) -> bool:
+    """Return True if the payload is an ESF-24 stored-measurement record.
+
+    The ESF-24 record is 20 bytes (length byte 0x14); the otherwise
+    identical renpho QN record is 19 (0x13), so the exact-length match
+    also keeps that variant out.
+    """
+    return (
+        len(payload) == _STORED_MEASUREMENT_FRAME_LENGTH
+        and payload[0:3] == _STORED_MEASUREMENT_FRAME_PREFIX
+    )
+
+
+class _StoredFrame(NamedTuple):
+    """Decoded stored offline-measurement record fields."""
+
+    count: int
+    index: int
+    timestamp: int
+    weight_kg: float
+    resistance_1: int
+    resistance_2: int
+
+    @property
+    def measurements(self) -> dict[str, int | float | None]:
+        """The record as a measurements dict, keyed like :func:`parse_weight`.
+
+        Applies the same "0 means not measured" rule: a resistance band
+        the scale did not measure is omitted rather than reported as 0.
+        """
+        data = dict[str, int | float | None]()
+        data[WEIGHT_KEY] = self.weight_kg
+        if self.resistance_1:
+            data[IMPEDANCE_KEY] = self.resistance_1
+        if self.resistance_2:
+            data[IMPEDANCE_500KHZ_KEY] = self.resistance_2
+        return data
+
+
+def parse_stored_measurement(payload: bytearray) -> _StoredFrame | None:
+    """Decode a stored offline-measurement record.
+
+    The scale sends one record per offline reading in response to the
+    query. Layout::
+
+        0..2    prefix 23 14 15
+        3       count — total records in this batch (0 = store empty)
+        4       index — 1-based position of this record in the batch
+        5..8    timestamp, little-endian uint32, seconds since
+                2000-01-01 00:00:00 UTC
+        9..10   weight, big-endian uint16, 0.01 kg
+        11..12  resistance 1 (50 kHz)
+        13..14  resistance 2 (500 kHz)
+        15..18  reserved (0x00)
+        19      checksum, mod-256 sum of bytes 0..18
+
+    ``timestamp`` is returned as unix seconds. When ``count == 0`` the
+    store is empty and the remaining fields are meaningless — callers
+    must not read them.
+
+    Returns None unless the payload is a stored-measurement frame with a
+    valid trailing checksum.
+    """
+    if not is_stored_measurement_frame(payload):
+        return None
+    if payload[-1] != sum(payload[:-1]) & 0xFF:
+        return None
+    return _StoredFrame(
+        count=payload[3],
+        index=payload[4],
+        timestamp=int.from_bytes(payload[5:9], "little") + _EPOCH_OFFSET,
+        weight_kg=round(int.from_bytes(payload[9:11], "big") / 100, 2),
+        resistance_1=int.from_bytes(payload[11:13], "big"),
+        resistance_2=int.from_bytes(payload[13:15], "big"),
+    )

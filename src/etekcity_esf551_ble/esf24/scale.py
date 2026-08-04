@@ -18,14 +18,27 @@ from ..data import (
 from .protocol import (
     CMD_END_MEASUREMENT,
     build_measurement_initiation_command,
+    build_stored_measurement_query,
     build_unit_update_command,
     is_measurement_frame,
+    is_stored_measurement_frame,
+    parse_stored_measurement,
     parse_weight,
 )
 
 _STATE_UNIT_SET = 1
 _STATE_MEASUREMENT_INIT = 2
 _STATE_SETTLING_LOGGED = 4
+# Set once the stored-measurement query has been sent this session.
+_STATE_STORED_QUERY = 8
+
+# Ack of our set-time (0x20) command, capture-verified: 21 05 15 01 3c.
+_SET_TIME_ACK_FRAME_PREFIX = b"\x21\x05\x15"
+_SET_TIME_ACK_FRAME_LENGTH = 5
+
+# Stored offline-measurement record. Matched on the opcode alone so a
+# record whose shape the parser rejects still reaches the handler's warning.
+_STORED_MEASUREMENT_OPCODE = b"\x23"
 
 
 class ESF24Scale(GattScale):
@@ -35,6 +48,15 @@ class ESF24Scale(GattScale):
     The final measurement frame carries dual-band BIA impedance, reported
     raw in ohms: 50 kHz under IMPEDANCE_KEY (usable with BodyMetrics) and
     500 kHz under IMPEDANCE_500KHZ_KEY.
+
+    ``clear_stored_measurements`` (default ``False``) drains the scale's
+    store of offline measurements — readings taken while nothing was
+    connected — once per session, via a query sent after the scale acks
+    our set-time command. Delivering a stored record deletes it from the
+    scale (there is no separate delete command), so enabling this hides
+    those readings from any other client: leave it off if the official
+    VeSync app should still import them. Drained records are logged at
+    debug level and discarded for now.
 
     Limitations:
     - No hardware/software version reading
@@ -50,6 +72,8 @@ class ESF24Scale(GattScale):
         bleak_scanner_backend=None,
         cooldown_seconds: int = GattScale.DEFAULT_COOLDOWN_SECONDS,
         logger: logging.Logger | None = None,
+        *,
+        clear_stored_measurements: bool = False,
     ) -> None:
         enforced_unit = (
             WeightUnit(display_unit) if display_unit is not None else WeightUnit.KG
@@ -65,6 +89,7 @@ class ESF24Scale(GattScale):
             logger,
         )
         self._state_mask = 0
+        self._clear_stored_measurements = clear_stored_measurements
 
     @GattScale.display_unit.setter
     def display_unit(self, value):
@@ -149,10 +174,90 @@ class ESF24Scale(GattScale):
                 )
                 cmd = build_measurement_initiation_command()
                 self._spawn_task(self._safe_write(cmd), name="esf24-measurement-init")
+        elif (
+            len(payload) == _SET_TIME_ACK_FRAME_LENGTH
+            and payload[0:3] == _SET_TIME_ACK_FRAME_PREFIX
+        ):
+            # Ack of our set-time command. Recognized even with the drain
+            # disabled so it is never logged as unrecognized; it doubles as
+            # the trigger for the stored-measurement query because that is
+            # where the vendor app sends it (before end-measurement).
+            self._logger.debug("ESF-24 set-time acknowledged by %s.", address)
+            self._query_stored_measurements(address)
+        elif payload[0:1] == _STORED_MEASUREMENT_OPCODE:
+            # Dispatched on the opcode alone, not the full frame shape: a
+            # 0x23 the parser rejects is a protocol anomaly the handler
+            # should warn about, not an unknown payload to pass over.
+            self._handle_stored_measurement(payload, address)
         else:
             self._logger.debug(
                 "ESF-24 ignoring unrecognized payload: %s", payload.hex()
             )
+
+    def _query_stored_measurements(self, address: str) -> None:
+        """Send the stored-measurement query once per session (if enabled).
+
+        Delivery of the returned records deletes them from the scale's
+        store, which is exactly the "clear" the option promises.
+        """
+        if (
+            not self._clear_stored_measurements
+            or self._state_mask & _STATE_STORED_QUERY
+        ):
+            return
+        self._state_mask |= _STATE_STORED_QUERY
+        self._logger.debug(
+            "ESF-24 querying stored offline measurements on %s to clear them.",
+            address,
+        )
+        self._spawn_task(
+            self._safe_write(build_stored_measurement_query()),
+            name="esf24-stored-query",
+        )
+
+    def _handle_stored_measurement(self, payload: bytearray, address: str) -> None:
+        """Handle a stored offline-measurement record.
+
+        Sent by the scale only in response to our stored-measurement
+        query, one frame per offline reading (``count=0`` when the store
+        is empty). Delivery deletes the record from the scale, so simply
+        receiving and discarding it here is what clears the store. Never
+        fires the measurement callback.
+        """
+        if not is_stored_measurement_frame(payload):
+            self._logger.warning(
+                "ESF-24 stored-measurement frame from %s has unexpected "
+                "length; ignoring: %s",
+                address,
+                payload.hex(),
+            )
+            return
+        frame = parse_stored_measurement(payload)
+        if frame is None:
+            self._logger.warning(
+                "ESF-24 stored-measurement frame from %s failed its checksum; "
+                "ignoring: %s",
+                address,
+                payload.hex(),
+            )
+            return
+        if frame.count == 0:
+            self._logger.debug(
+                "ESF-24 stored-measurement store on %s is empty.", address
+            )
+            return
+        self._logger.debug(
+            "ESF-24 discarding stored offline measurement %d/%d from %s: "
+            "weight=%.2f kg, r1=%d, r2=%d, timestamp=%d (delivery clears it "
+            "from the scale).",
+            frame.index,
+            frame.count,
+            address,
+            frame.weight_kg,
+            frame.resistance_1,
+            frame.resistance_2,
+            frame.timestamp,
+        )
 
     async def _safe_write(self, data: bytearray) -> None:
         """Write GATT char safely with error handling."""

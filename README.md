@@ -210,6 +210,8 @@ Implementation for ESF-551 scales with full feature support.
 
 Experimental implementation for ESF-24 scales. Reports weight and dual-band BIA impedance: the 50 kHz value under `IMPEDANCE_KEY` (usable with `BodyMetrics`) and the raw 500 kHz value under `IMPEDANCE_500KHZ_KEY` (ESF-24 only).
 
+Accepts the keyword-only argument `clear_stored_measurements: bool = False`. When enabled, the library drains the scale's store of offline measurements — readings taken while nothing was connected — once per session. Receiving a stored reading deletes it from the scale (the protocol has no separate delete command), so enabling this hides those readings from any other client: leave it off if you also sync the scale with the official VeSync app. Drained readings are logged at debug level and discarded for now.
+
 #### `FIT8SScale`
 
 Experimental implementation for FIT-8S scales. Reads weight and impedance passively from BLE advertisement manufacturer data — no GATT connection is established.
