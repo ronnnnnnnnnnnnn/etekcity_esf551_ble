@@ -4,7 +4,7 @@ Two manufacturer-data frame families are recognized.
 
 Company ID 1744 (Etekcity platform)::
 
-    [0]    0x01 header
+    [0]    product state/header byte (usually 0x01; variable on EFS-C651)
     [1:7]  device MAC address, little-endian
     [7:9]  model identifier, 16-bit big-endian
     [9:]   model-specific payload (e.g. FIT-8S live weight)
@@ -50,6 +50,7 @@ class ScaleModel(StrEnum):
     ESF24 = "ESF-24"
     FIT8S = "FIT-8S"
     EFSA591S = "EFS-A591S"
+    EFSC651 = "EFS-C651"
 
 
 def parse_model_code(payload: bytes) -> int | None:
@@ -96,6 +97,19 @@ def is_etekcity_frame(payload: bytes, address: str | None = None) -> bool:
     return True
 
 
+def _is_efsc651_frame(payload: bytes, address: str | None) -> bool:
+    """Validate the captured variable-header EFS-C651 advertisement."""
+    if parse_model_code(payload) != 136:
+        return False
+    if address is None:
+        return True
+    expected = _reversed_mac(address)
+    if expected is None:
+        # CoreBluetooth exposes opaque per-host identifiers instead of MACs.
+        return True
+    return payload[1:7] == expected
+
+
 def _parse_qn_model_code(payload: bytes, address: str | None) -> int | None:
     """Return the model identifier from a QN payload.
 
@@ -121,6 +135,7 @@ MODEL_CODES: dict[int, ScaleModel] = {
     5: ScaleModel.EFSA591S,
     127: ScaleModel.EFSA591S,
     134: ScaleModel.EFSA591S,
+    136: ScaleModel.EFSC651,
     49321: ScaleModel.FIT8S,
 }
 
@@ -139,6 +154,7 @@ _reported_identifiers: set[tuple[int, int]] = set()
 FALLBACK_MATCHERS: list[tuple[ScaleModel, int | None, str]] = [
     (ScaleModel.ESF24, None, "QN-Scale1"),
     (ScaleModel.ESF24, None, "04:AC:44:*"),
+    (ScaleModel.EFSC651, ETEKCITY_MANUFACTURER_ID, "CF:E9:06:*"),
     (ScaleModel.ESF551, ETEKCITY_MANUFACTURER_ID, "Etekcity *Fitness *Scale*"),
     (ScaleModel.ESF551, ETEKCITY_MANUFACTURER_ID, "D0:4D:00:*"),
     (ScaleModel.FIT8S, ETEKCITY_MANUFACTURER_ID, "A9:89:5D:*"),
@@ -166,9 +182,14 @@ def detect_model(
 
     etekcity_code = None
     payload = manufacturer_data.get(ETEKCITY_MANUFACTURER_ID)
-    if payload is not None and is_etekcity_frame(payload, address):
+    if payload is not None:
         etekcity_code = parse_model_code(payload)
+        etekcity_valid = is_etekcity_frame(payload, address) or _is_efsc651_frame(
+            payload, address
+        )
         if etekcity_code is not None and etekcity_code in MODEL_CODES:
+            if not etekcity_valid:
+                return None
             return MODEL_CODES[etekcity_code]
 
     qn_code = None
@@ -227,5 +248,8 @@ CAPABILITIES: dict[ScaleModel, ScaleCapabilities] = {
     ),
     ScaleModel.EFSA591S: ScaleCapabilities(
         has_impedance=True, has_heart_rate=True, display_unit_settable=True
+    ),
+    ScaleModel.EFSC651: ScaleCapabilities(
+        has_impedance=True, has_heart_rate=False, display_unit_settable=True
     ),
 }

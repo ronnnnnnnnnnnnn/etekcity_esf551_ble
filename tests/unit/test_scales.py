@@ -7,6 +7,7 @@ import pytest
 from bleak.backends.device import BLEDevice
 
 from src.etekcity_esf551_ble import (
+    EFSC651Scale,
     EFSA591SScale,
     ESF24Scale,
     ESF551Scale,
@@ -14,6 +15,7 @@ from src.etekcity_esf551_ble import (
     FIT8SScale,
     WeightUnit,
 )
+from src.etekcity_esf551_ble.efsa591s import protocol as a5
 
 # weight 70.5 kg + impedance 500 ohms, MAC "A9:89:5D:ED:A0:63" (LE), stable, unit=LB.
 _FIT8S_ADDRESS = "A9:89:5D:ED:A0:63"
@@ -344,10 +346,39 @@ def test_default_logger_keeps_each_models_own_module_name():
     esf24 = ESF24Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
     esf551 = ESF551Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
     fit8s = FIT8SScale(_FIT8S_ADDRESS, Mock(), bleak_scanner_backend=Mock())
+    efsc651 = EFSC651Scale(
+        "CF:E9:06:17:9A:46", Mock(), bleak_scanner_backend=Mock()
+    )
 
     assert esf24._logger.name.endswith("esf24.scale")
     assert esf551._logger.name.endswith("esf551.scale")
     assert fit8s._logger.name.endswith("fit8s.scale")
+    assert efsc651._logger.name.endswith("efsc651.scale")
+
+
+def test_efsc651_emits_captured_weight_and_impedance():
+    callback = Mock()
+    scale = EFSC651Scale(
+        "CF:E9:06:17:9A:46", callback, bleak_scanner_backend=Mock()
+    )
+    scale._key = b"\x01" * 16
+    scale._iv = b"\x02" * 16
+    plaintext = bytes.fromhex(
+        "32313436363837355f5f5f5f5f5f5f5f5f5f5f5f0000"
+        "742101b456bf00454b6c6a0102000002"
+    )
+    frame = a5.build_frame(1, 0x4422, b"\x00" * 16, a5.CHANNEL_AES)
+
+    with patch(
+        "src.etekcity_esf551_ble.efsc651.scale.a5.decrypt_frame_payload",
+        return_value=plaintext,
+    ):
+        scale._handle_frame(frame, "Etekcity Smart Fitness Scale", scale.address)
+
+    callback.assert_called_once()
+    scale_data = callback.call_args.args[0]
+    assert scale_data.measurements == {"weight": 74.1, "impedance": 517}
+    assert scale_data.display_unit == WeightUnit.KG
 
 
 @pytest.mark.asyncio
@@ -369,7 +400,7 @@ async def test_gatt_models_default_to_a_reconnect_cooldown():
     Without one, the stragglers a scale keeps emitting while it spins down
     after a measurement each start a futile connect cycle.
     """
-    for cls in (ESF551Scale, ESF24Scale, EFSA591SScale):
+    for cls in (ESF551Scale, ESF24Scale, EFSA591SScale, EFSC651Scale):
         scale = cls("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
         assert scale._cooldown_seconds == 5, cls.__name__
 

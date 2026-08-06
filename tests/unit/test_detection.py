@@ -29,6 +29,7 @@ RENPHO_QN_PAYLOAD = bytes.fromhex(
 )  # foreign QN scale, code 0x09E9
 # Synthetic: Etekcity frame for MAC CF:EA:01:28:86:45 with code 5
 EFSA591S_PAYLOAD = bytes.fromhex("0145862801eacf0005")
+EFSC651_PAYLOAD = bytes.fromhex("32469a1706e9cf0088030201")
 
 MFR = ETEKCITY_MANUFACTURER_ID
 QN = QN_MANUFACTURER_ID
@@ -45,6 +46,7 @@ def test_scale_model_values_are_stable():
     assert ScaleModel.ESF24.value == "ESF-24"
     assert ScaleModel.FIT8S.value == "FIT-8S"
     assert ScaleModel.EFSA591S.value == "EFS-A591S"
+    assert ScaleModel.EFSC651.value == "EFS-C651"
 
 
 def test_parse_model_code_reads_be16_at_offset_7():
@@ -52,6 +54,7 @@ def test_parse_model_code_reads_be16_at_offset_7():
     assert parse_model_code(FIT8S_PAYLOAD) == 49321
     assert parse_model_code(PURIFIER_PAYLOAD) == 0xC623
     assert parse_model_code(EFSA591S_PAYLOAD) == 5
+    assert parse_model_code(EFSC651_PAYLOAD) == 136
 
 
 def test_registry_covers_known_variants():
@@ -98,6 +101,55 @@ def test_detect_efsa591s_by_code_despite_esf551_name():
 
 def test_detect_efsa591s_passive_no_name():
     assert detect_model(None, {MFR: EFSA591S_PAYLOAD}) == ScaleModel.EFSA591S
+
+
+def test_detect_efsc651_real_capture():
+    assert (
+        detect_model(
+            "Etekcity Smart Fitness Scale",
+            {MFR: EFSC651_PAYLOAD},
+            address="CF:E9:06:17:9A:46",
+        )
+        == ScaleModel.EFSC651
+    )
+
+
+def test_detect_efsc651_without_address():
+    assert (
+        detect_model("Etekcity Smart Fitness Scale", {MFR: EFSC651_PAYLOAD})
+        == ScaleModel.EFSC651
+    )
+
+
+def test_detect_efsc651_with_corebluetooth_address():
+    assert (
+        detect_model(
+            "Etekcity Smart Fitness Scale",
+            {MFR: EFSC651_PAYLOAD},
+            address="AF727D4C-932A-D465-3F2C-A6640868DE71",
+        )
+        == ScaleModel.EFSC651
+    )
+
+
+def test_efsc651_variable_header_requires_matching_mac():
+    assert (
+        detect_model(
+            None, {MFR: EFSC651_PAYLOAD}, address="AA:BB:CC:DD:EE:FF"
+        )
+        is None
+    )
+
+
+def test_efsc651_wrong_mac_does_not_fallback_to_esf551_name():
+    assert (
+        detect_model(
+            "Etekcity Smart Fitness Scale",
+            {MFR: EFSC651_PAYLOAD},
+            address="AA:BB:CC:DD:EE:FF",
+        )
+        is None
+    )
 
 
 def test_detect_fit8s_by_model_code():
@@ -243,6 +295,7 @@ def test_capability_flags():
     assert CAPABILITIES[ScaleModel.ESF551].has_impedance is True
     assert CAPABILITIES[ScaleModel.FIT8S].has_impedance is True
     assert CAPABILITIES[ScaleModel.EFSA591S].has_impedance is True
+    assert CAPABILITIES[ScaleModel.EFSC651].has_impedance is True
     # Heart rate: EFS-A591S only
     assert [m for m in ScaleModel if CAPABILITIES[m].has_heart_rate] == [
         ScaleModel.EFSA591S
@@ -260,6 +313,7 @@ def test_public_api_exports():
     # SCALE_CLASSES maps every model to its client class
     assert set(lib.SCALE_CLASSES) == set(ScaleModel)
     assert lib.SCALE_CLASSES[ScaleModel.EFSA591S] is lib.EFSA591SScale
+    assert lib.SCALE_CLASSES[ScaleModel.EFSC651] is lib.EFSC651Scale
     assert lib.SCALE_CLASSES[ScaleModel.ESF551] is lib.ESF551Scale
     assert lib.SCALE_CLASSES[ScaleModel.ESF24] is lib.ESF24Scale
     assert lib.SCALE_CLASSES[ScaleModel.FIT8S] is lib.FIT8SScale
