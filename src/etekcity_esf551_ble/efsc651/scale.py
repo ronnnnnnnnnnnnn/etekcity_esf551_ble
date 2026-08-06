@@ -1,4 +1,4 @@
-"""EFS-C651-EU encrypted A5 GATT client."""
+"""EFS-C651 encrypted A5 GATT client."""
 
 from __future__ import annotations
 
@@ -21,7 +21,22 @@ _RESULT_OPCODE = 0x4422
 
 
 class EFSC651Scale(GattScale):
-    """Read finalized weight and impedance records from an EFS-C651-EU scale."""
+    """
+    EFS-C651 Smart Fitness Scale.
+
+    Speaks the same encrypted "A5" protocol as the EFS-A591S over GATT FFF0
+    (notify FFF1 / write FFF2): a small-number Diffie-Hellman handshake, an
+    AES-128-CBC session key derived from the exchange and the device MAC, then
+    an encrypted measurement stream. Only the final result frame is applied;
+    the live weight stream is ignored.
+
+    Impedance is reported in an encoded form unique to this model family and
+    is decoded in :mod:`.protocol` — see there for the details.
+
+    Note: key derivation requires the device's real MAC address, so this model
+    does not work on platforms where bleak reports a CoreBluetooth UUID instead
+    of a MAC (i.e. macOS without ``use_bdaddr``).
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)

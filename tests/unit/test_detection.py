@@ -134,10 +134,7 @@ def test_detect_efsc651_with_corebluetooth_address():
 
 def test_efsc651_variable_header_requires_matching_mac():
     assert (
-        detect_model(
-            None, {MFR: EFSC651_PAYLOAD}, address="AA:BB:CC:DD:EE:FF"
-        )
-        is None
+        detect_model(None, {MFR: EFSC651_PAYLOAD}, address="AA:BB:CC:DD:EE:FF") is None
     )
 
 

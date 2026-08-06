@@ -1,6 +1,6 @@
-# Etekcity ESF-551, ESF-24, FIT-8S & EFS-A591S BLE
+# Etekcity ESF-551, ESF-24, FIT-8S, EFS-A591S & EFS-C651 BLE
 
-This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) and [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale) models.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale) and [Etekcity EFS-C651](https://etekcity.com/collections/fitness-scales/products/cobra-dark-blue) models.
 
 ## Features
 
@@ -8,9 +8,10 @@ This package provides a basic unofficial interface for interacting with Etekcity
 - **ESF-24**: Experimental support (weight, impedance, body metrics, unit changes)
 - **FIT-8S**: Experimental support (weight, impedance, body metrics)
 - **EFS-A591S (Apex HR)**: Experimental support (weight, impedance, heart rate, body metrics, unit changes)
+- **EFS-C651**: Experimental support (weight, impedance, body metrics, unit changes)
 - Easy connection and notification handling
 - Body composition metrics via the `BodyMetrics` calculator — works with any impedance-capable scale, with optional athlete mode
-- Display unit management (ESF-551, EFS-A591S and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
+- Display unit management (ESF-551, EFS-A591S, EFS-C651 and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
 
 ## Supported Models
 
@@ -20,6 +21,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 | EFS-A591S | 🔬 Experimental | Weight, impedance, heart rate, body metrics, unit changes |
 | ESF-24 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
 | FIT-8S | 🔬 Experimental | Weight, impedance, body metrics |
+| EFS-C651 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
 
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand) or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
 
@@ -112,6 +114,10 @@ scale = ESF24Scale(address, callback)
 # FIT-8S (experimental, advertisement-based — no GATT connection)
 from etekcity_esf551_ble import FIT8SScale
 scale = FIT8SScale(address, callback)
+
+# EFS-C651 (experimental, encrypted)
+from etekcity_esf551_ble import EFSC651Scale
+scale = EFSC651Scale(address, callback)
 ```
 
 For a real-life usage example of this library, check out the [Etekcity Fitness Scale BLE Integration for Home Assistant](https://github.com/ronnnnnnnnnnnnn/etekcity_fitness_scale_ble).
@@ -160,7 +166,7 @@ async def main():
 asyncio.run(main())
 ```
 
-Note for macOS: CoreBluetooth reports devices by UUID rather than MAC address; construct the scanner with `BleakScanner(on_advertisement, cb={"use_bdaddr": True})` so `detect_model()` can validate the MAC echoes (and so the EFS-A591S client, whose session keys derive from the MAC, can connect).
+Note for macOS: CoreBluetooth reports devices by UUID rather than MAC address; construct the scanner with `BleakScanner(on_advertisement, cb={"use_bdaddr": True})` so `detect_model()` can validate the MAC echoes (and so the EFS-A591S and EFS-C651 clients, whose session keys derive from the MAC, can connect).
 
 Two manufacturer-data frame families, both observed in real advertisement captures:
 
@@ -172,6 +178,7 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 |---|---|---|
 | ESF-551 | 1744 | 1 (0x0001), 2 (0x0002) |
 | EFS-A591S | 1744 | 3 (0x0003), 5 (0x0005), 127 (0x007F), 134 (0x0086) |
+| EFS-C651 | 1744 | 136 (0x0088) |
 | FIT-8S | 1744 | 49321 (0xC0A9) |
 | ESF-24 | 65535 | 294 (0x0126) |
 
@@ -219,6 +226,10 @@ Experimental implementation for FIT-8S scales. Reads weight and impedance passiv
 #### `EFSA591SScale`
 
 Experimental implementation for EFS-A591S (Apex HR) scales. Uses an encrypted protocol over GATT with a Diffie-Hellman key exchange and AES-128-CBC encryption. Supports weight, impedance, heart rate and display unit management. Requires the device's real Bluetooth MAC address for key derivation.
+
+#### `EFSC651Scale`
+
+Experimental implementation for EFS-C651 scales. Uses the same encrypted protocol as the EFS-A591S, and likewise requires the device's real Bluetooth MAC address for key derivation. Supports weight, impedance and display unit management; this model has no heart-rate sensor. Impedance is reported in an encoded form specific to this model and is decoded into ohms by the library.
 
 #### Common Methods:
 
@@ -341,6 +352,7 @@ scan on
 
 - FIT-8S protocol support contributed by [@Flautz](https://github.com/Flautz) — thank you!
 - EFS-A591S (Apex HR) protocol support contributed by [@r3klawz](https://github.com/r3klawz) — thank you!
+- EFS-C651 protocol support contributed by [@tobsen111](https://github.com/tobsen111) — thank you!
 
 
 ## Support the Project

@@ -1,4 +1,4 @@
-"""EFS-C651-EU smart fitness scale support."""
+"""EFS-C651 smart fitness scale support."""
 
 from . import protocol
 from .scale import EFSC651Scale
