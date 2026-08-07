@@ -3,7 +3,15 @@
 from datetime import date
 from unittest.mock import patch
 
-from src.etekcity_esf551_ble.body_metrics import BodyMetrics, Sex, calc_age
+import pytest
+
+from src.etekcity_esf551_ble.body_metrics import (
+    BaseBodyMetrics,
+    BodyMetrics,
+    BodyMetricsV2,
+    Sex,
+    calc_age,
+)
 
 
 def test_body_metrics_calculations():
@@ -205,3 +213,126 @@ def test_body_metrics_edge_cases():
     assert high_weight_metrics.body_mass_index > 0
     assert low_weight_metrics.body_fat_percentage >= 0
     assert high_weight_metrics.body_fat_percentage >= 0
+
+
+# ---------------------------------------------------------------------------
+# BodyMetricsV2 (EFS-C651)
+#
+# The two cases below are real measurements: the weight and impedance come
+# from decrypted EFS-C651 sessions, and every expected value is what the
+# vendor app displayed for that same measurement. They are exact-match golden
+# vectors.
+# ---------------------------------------------------------------------------
+
+# Real capture A: male, 33 years, 175 cm, 74.35 kg, impedance decoded to 488 ohm.
+CAPTURE_A = dict(weight_kg=74.35, height_m=1.75, age=33, sex=Sex.Male, impedance=488)
+EXPECTED_A = {
+    "body_mass_index": 24.3,
+    "body_fat_percentage": 22.1,
+    "fat_free_weight": 57.9,
+    "bone_mass": 2.9,
+    "body_water_percentage": 53.4,
+    "skeletal_muscle_mass": 30.2,
+    "protein_percentage": 14.4,
+    "basal_metabolic_rate": 1563,
+    "metabolic_age": 34,
+    "visceral_fat_value": 11,
+    "subcutaneous_fat_percentage": 19.5,
+}
+
+# Real capture B: female, 32 years, 175 cm, 60.70 kg, impedance decoded to 528 ohm.
+# The reporter gave her age as 31; the app's own BMR and body age both pin it
+# at 32, and no other metric distinguishes the two.
+CAPTURE_B = dict(weight_kg=60.70, height_m=1.75, age=32, sex=Sex.Female, impedance=528)
+EXPECTED_B = {
+    "body_mass_index": 19.8,
+    "body_fat_percentage": 26.9,
+    "fat_free_weight": 44.4,
+    "bone_mass": 2.6,
+    "body_water_percentage": 50.1,
+    "skeletal_muscle_mass": 22.5,
+    "protein_percentage": 13.5,
+    "basal_metabolic_rate": 1216,
+    "metabolic_age": 31,
+    "visceral_fat_value": 3,
+    "subcutaneous_fat_percentage": 25.7,
+}
+
+
+@pytest.mark.parametrize(
+    ("inputs", "expected"),
+    [(CAPTURE_A, EXPECTED_A), (CAPTURE_B, EXPECTED_B)],
+    ids=["capture_a_male", "capture_b_female"],
+)
+def test_matches_app_displayed_values(inputs, expected):
+    metrics = BodyMetricsV2(**inputs)
+    for name, want in expected.items():
+        assert getattr(metrics, name) == want, name
+
+
+def test_muscle_percentage_truncates_where_the_app_rounds():
+    assert BodyMetricsV2(**CAPTURE_A).muscle_percentage == 74.0
+    assert BodyMetricsV2(**CAPTURE_B).muscle_percentage == 68.8
+
+
+@pytest.mark.parametrize(
+    ("inputs", "expected"),
+    [(CAPTURE_A, EXPECTED_A), (CAPTURE_B, EXPECTED_B)],
+    ids=["capture_a_male", "capture_b_female"],
+)
+def test_mass_identities_hold(inputs, expected):
+    metrics = BodyMetricsV2(**inputs)
+    truncated_weight = int(inputs["weight_kg"] * 10) / 10
+    assert metrics.body_fat_mass + metrics.fat_free_weight == pytest.approx(
+        truncated_weight, abs=0.05
+    )
+    assert metrics.bone_mass + metrics.muscle_mass == pytest.approx(
+        metrics.fat_free_weight, abs=0.001
+    )
+
+
+def test_provides_the_shared_metric_surface():
+    metrics = BodyMetricsV2(**CAPTURE_A)
+    assert isinstance(metrics, BaseBodyMetrics)
+    # Every metric declared on the base is present and numeric.
+    for name in (
+        "body_mass_index",
+        "body_fat_percentage",
+        "fat_free_weight",
+        "subcutaneous_fat_percentage",
+        "visceral_fat_value",
+        "body_water_percentage",
+        "basal_metabolic_rate",
+        "skeletal_muscle_percentage",
+        "muscle_mass",
+        "bone_mass",
+        "protein_percentage",
+        "metabolic_age",
+    ):
+        assert isinstance(getattr(metrics, name), (int, float)), name
+    # The scores are specific to the other algorithm and must not appear here.
+    for name in ("weight_score", "fat_score", "bmi_score", "health_score"):
+        assert not hasattr(metrics, name), name
+
+
+def test_as_dict_exposes_metrics_without_internals():
+    d = BodyMetricsV2(**CAPTURE_A).as_dict()
+    assert d["body_fat_percentage"] == 22.1
+    assert "body_fat_mass" in d  # algorithm-specific extras are included
+    assert not any(k.startswith("_") for k in d)  # intermediates are not
+
+
+def test_athlete_mode_lowers_body_fat():
+    normal = BodyMetricsV2(**CAPTURE_A)
+    athlete = BodyMetricsV2(**CAPTURE_A, athlete=True)
+    assert athlete.body_fat_percentage < normal.body_fat_percentage
+    assert athlete.bone_mass > normal.bone_mass
+    assert athlete.basal_metabolic_rate != normal.basal_metabolic_rate
+    assert athlete.as_dict().keys() == normal.as_dict().keys()
+
+
+def test_height_is_taken_to_the_nearest_centimetre():
+    assert (
+        BodyMetricsV2(**{**CAPTURE_A, "height_m": 1.754}).as_dict()
+        == BodyMetricsV2(**CAPTURE_A).as_dict()
+    )

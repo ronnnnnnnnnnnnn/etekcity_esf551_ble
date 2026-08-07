@@ -10,7 +10,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 - **EFS-A591S (Apex HR)**: Experimental support (weight, impedance, heart rate, body metrics, unit changes)
 - **EFS-C651**: Experimental support (weight, impedance, body metrics, unit changes)
 - Easy connection and notification handling
-- Body composition metrics via the `BodyMetrics` calculator — works with any impedance-capable scale, with optional athlete mode
+- Body composition metrics for any impedance-capable scale, with optional athlete mode. Two calculators are provided, matching the two algorithms the app uses: `BodyMetrics` for the ESF-551, ESF-24, FIT-8S and EFS-A591S, and `BodyMetricsV2` for the EFS-C651. They share a common set of metrics, so they can be used interchangeably — see [Body metrics](#body-metrics)
 - Display unit management (ESF-551, EFS-A591S, EFS-C651 and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
 
 ## Supported Models
@@ -60,7 +60,8 @@ async def main():
         if IMPEDANCE_KEY in data.measurements:
             print(f"Impedance: {data.measurements[IMPEDANCE_KEY]} Ω")
 
-            # Calculate body metrics (any impedance-capable scale)
+            # Calculate body metrics (any impedance-capable scale).
+            # Use BodyMetricsV2 instead for an EFS-C651 — see "Body metrics".
             # Note: Replace with your actual height, age and sex
             body_metrics = BodyMetrics(
                 weight_kg=data.measurements[WEIGHT_KEY],
@@ -292,6 +293,20 @@ A class for calculating various body composition metrics based on height, age, s
 - `bmi_score`: Calculated BMI score (0-100)
 - `health_score`: Overall health score based on other metrics (0-100)
 - `metabolic_age`: Estimated metabolic age in years
+
+### `BodyMetricsV2`
+
+The calculator matching the VeSync app for the **EFS-C651**. Takes the same constructor arguments as `BodyMetrics` and provides the same `as_dict()` method.
+
+This algorithm estimates lean body mass first and derives everything else from it, working in fixed-point arithmetic throughout. Its values therefore land on 0.1 steps — that is the algorithm's real precision, not rounding applied afterwards.
+
+#### Properties:
+
+All of the `BodyMetrics` properties above **except** `weight_score`, `fat_score`, `bmi_score` and `health_score`, plus:
+
+- `body_fat_mass`: Estimated body fat in kg
+- `muscle_percentage`: Estimated muscle mass as a percentage of total weight
+- `skeletal_muscle_mass`: Estimated skeletal muscle in kg
 
 ### `calc_age`
 
