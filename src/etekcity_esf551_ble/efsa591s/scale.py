@@ -19,6 +19,8 @@ from . import protocol as a5
 
 # Frames the scale emits that carry no data we use (status/flag/ack frames).
 # Ignored silently so they don't spam the debug log.
+# Note: 0x413C is NOT here — that is the plaintext final-result opcode on
+# some Apex firmwares (see OPCODE_RESULT_PLAIN).
 _STATUS_OPCODES = frozenset({0x4202, 0x4420, 0x413B, 0x413D, 0x4434, 0x4436})
 
 
@@ -168,9 +170,28 @@ class EFSA591SScale(GattScale):
             if meas is None or meas.weight_kg <= 0:
                 return
             self._emit(meas, name, address)
-        elif parsed.opcode == a5.OPCODE_MEASUREMENT:
-            # Live, pre-stabilization weight stream - intentionally ignored so
-            # only the finalized measurement is delivered to Home Assistant.
+        elif parsed.opcode == a5.OPCODE_RESULT_PLAIN:
+            # Plaintext final-result path used by some Apex firmwares that never
+            # complete (or never offer) the DH/AES handshake. Same body layout
+            # as the decrypted 0x443A payload; see plain_payload().
+            pt = a5.plain_payload(parsed)
+            meas = a5.parse_result(pt)
+            if meas is None or meas.weight_kg <= 0:
+                self._logger.debug(
+                    "EFS-A591S plaintext result not parseable: %s", pt.hex()
+                )
+                return
+            self._logger.debug(
+                "EFS-A591S plaintext result: weight=%.2f kg impedance=%s hr=%s",
+                meas.weight_kg,
+                meas.impedance,
+                meas.heart_rate,
+            )
+            self._emit(meas, name, address)
+        elif parsed.opcode in (a5.OPCODE_MEASUREMENT, a5.OPCODE_MEASUREMENT_PLAIN):
+            # Live, pre-stabilization weight stream (AES 0x4421 or plain 0x4121)
+            # — intentionally ignored so only the finalized measurement is
+            # delivered to Home Assistant.
             return
         elif parsed.opcode not in _STATUS_OPCODES:
             self._logger.debug(
