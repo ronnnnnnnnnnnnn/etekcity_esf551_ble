@@ -194,6 +194,50 @@ def test_address_prefix_fallback_when_code_unreadable():
     )
 
 
+def test_oui_matcher_outranks_shared_name():
+    # Three models advertise "Etekcity Smart Fitness Scale"; when the code
+    # is unreadable, a model-specific OUI must win over the shared name.
+    shared_name = "Etekcity Smart Fitness Scale"
+    for address, model in (
+        ("CF:EA:01:28:86:45", ScaleModel.EFSA591S),
+        ("CF:E9:06:17:9A:46", ScaleModel.EFSC651),
+        ("A9:89:5D:ED:A0:63", ScaleModel.FIT8S),
+        ("D0:4D:00:1C:29:62", ScaleModel.ESF551),
+    ):
+        assert (
+            detect_model(shared_name, {MFR: b"\x01\x45"}, address=address) == model
+        ), address
+
+
+def test_shared_name_resolves_by_generation():
+    # No OUI hit and no usable identifier: the header generation is the only
+    # remaining signal. Generation 2 → EFS-C651 (the only gen-2 scale);
+    # generation 1 → None, because the ESF-551 and EFS-A591S cannot be told
+    # apart and a wrong guess configures a silently broken protocol.
+    shared_name = "Etekcity Smart Fitness Scale"
+    assert (
+        detect_model(shared_name, {MFR: b"\x32\x45"}, address="AA:BB:CC:DD:EE:FF")
+        == ScaleModel.EFSC651
+    )
+    assert (
+        detect_model(shared_name, {MFR: b"\x01\x45"}, address="AA:BB:CC:DD:EE:FF")
+        is None
+    )
+    # The motivating real-world case: a passive/truncated EFS-C651 frame on
+    # macOS, where the address is an opaque CoreBluetooth UUID and no OUI
+    # matcher can ever fire.
+    assert (
+        detect_model(
+            shared_name,
+            {MFR: b"\x32\x45"},
+            address="AF727D4C-932A-D465-3F2C-A6640868DE71",
+        )
+        == ScaleModel.EFSC651
+    )
+    # An empty 1744 payload has no readable generation: stay unclassified.
+    assert detect_model(shared_name, {MFR: b""}) is None
+
+
 def test_address_prefix_requires_manufacturer_id():
     # A known OUI without the required manufacturer ID must not match.
     assert detect_model(None, {}, address="CF:EA:01:28:86:45") is None
@@ -217,18 +261,35 @@ def test_qn_frame_dynamic_bytes_ignored():
 
 
 def test_unrecognized_variant_logs_identifier(caplog):
-    # ESF-551-style frame with an identifier not in the registry: the name
-    # matcher still detects it, and the identifier is logged for reporting.
+    # Generation-1 frame with an identifier not in the registry and only the
+    # shared name: unclassifiable (ESF-551 vs EFS-A591S), but the identifier
+    # must still be logged so the registry can be extended.
     detection_module._reported_identifiers.clear()
     # Identifier 4 is not assigned to any known model, so it stays a safe
     # stand-in for an unregistered variant.
     payload = bytes.fromhex("0162291c004dd00004")
     with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
-        assert (
-            detect_model("Etekcity Smart Fitness Scale", {MFR: payload})
-            == ScaleModel.ESF551
-        )
+        assert detect_model("Etekcity Smart Fitness Scale", {MFR: payload}) is None
     assert "unrecognized model identifier 4" in caplog.text
+
+
+def test_unregistered_gen2_variant_resolves_to_efsc651(caplog):
+    # A hypothetical EFS-C651 sibling: generation-2 frame,
+    # valid MAC echo, unregistered identifier, shared name. The MAC matches
+    # no OUI matcher, so only the header generation identifies the family;
+    # the identifier is logged for reporting.
+    detection_module._reported_identifiers.clear()
+    payload = bytes.fromhex("32332211ccbbaa0089")  # identifier 137
+    with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
+        assert (
+            detect_model(
+                "Etekcity Smart Fitness Scale",
+                {MFR: payload},
+                address="AA:BB:CC:11:22:33",
+            )
+            == ScaleModel.EFSC651
+        )
+    assert "unrecognized model identifier 137" in caplog.text
 
 
 def test_is_etekcity_frame():
@@ -236,18 +297,36 @@ def test_is_etekcity_frame():
     # not a scale check) — unknown future models must never be filtered out.
     assert is_etekcity_frame(ESF551_PAYLOAD, "D0:4D:00:1C:29:62")
     assert is_etekcity_frame(PURIFIER_PAYLOAD, "40:91:51:E5:31:8E")
+    # Generation-2 frame (EFS-C651, header 0x32): the header's upper bits
+    # are state flags, only the generation nibble is structural.
+    assert is_etekcity_frame(EFSC651_PAYLOAD, "CF:E9:06:17:9A:46")
     # Unknown-model frame with a MAC/identifier we've never seen: still
     # recognized as platform traffic.
     assert is_etekcity_frame(bytes.fromhex("01be213329e74800b1"))
     # MAC-echo mismatch or wrong shape: rejected.
     assert not is_etekcity_frame(ESF551_PAYLOAD, "AA:BB:CC:DD:EE:FF")
+    assert not is_etekcity_frame(EFSC651_PAYLOAD, "AA:BB:CC:DD:EE:FF")
     assert not is_etekcity_frame(RENPHO_QN_PAYLOAD, "FF:03:00:67:AA:03")
     assert not is_etekcity_frame(b"\x01\x62")
+    # Unknown generation nibble: layout can't be trusted.
+    assert not is_etekcity_frame(b"\x03" + ESF551_PAYLOAD[1:], "D0:4D:00:1C:29:62")
+
+
+def test_efsc651_header_flag_variants_accepted():
+    # The generation-2 header carries flags in its upper bits (0x32
+    # captured; bit 7 toggles with device state, so 0xB2 is the same scale
+    # in another state). All must classify on the model code + MAC echo.
+    for header in (0x32, 0xB2, 0x12, 0x22, 0x02):
+        payload = bytes([header]) + EFSC651_PAYLOAD[1:]
+        assert (
+            detect_model(None, {MFR: payload}, address="CF:E9:06:17:9A:46")
+            == ScaleModel.EFSC651
+        ), hex(header)
 
 
 def test_etekcity_registry_requires_frame_shape():
-    # Registered identifier but wrong header byte: not trusted.
-    bad_header = b"\x02" + ESF551_PAYLOAD[1:]
+    # Registered identifier but an unknown generation nibble: not trusted.
+    bad_header = b"\x03" + ESF551_PAYLOAD[1:]
     assert detect_model(None, {MFR: bad_header}) is None
     # Registered identifier but MAC echo mismatching the device address.
     assert (
@@ -268,10 +347,29 @@ def test_qn_frame_without_address_accepts_registered_code():
 
 def test_name_matching_is_case_insensitive():
     assert detect_model("qn-scale1", {}) == ScaleModel.ESF24
+    # Shared-name handling must be case-insensitive too (gen-2 → EFS-C651).
     assert (
-        detect_model("ETEKCITY SMART FITNESS SCALE", {MFR: b"\x01\x62"})
-        == ScaleModel.ESF551
+        detect_model("ETEKCITY SMART FITNESS SCALE", {MFR: b"\x32\x62"})
+        == ScaleModel.EFSC651
     )
+
+
+def test_invalid_frame_identifier_not_reported(caplog):
+    # Unregistered identifier on a frame whose MAC echo fails: the name
+    # matcher may still classify the device, but the please-report warning
+    # must not cite a code read off an untrusted payload.
+    detection_module._reported_identifiers.clear()
+    payload = bytes.fromhex("0162291c004dd00063")  # identifier 99, ESF-551 MAC
+    with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
+        assert (
+            detect_model(
+                "Etekcity Smart Fitness Scale",
+                {MFR: payload},
+                address="AA:BB:CC:DD:EE:FF",
+            )
+            is None
+        )
+    assert "unrecognized model identifier" not in caplog.text
 
 
 def test_unrecognized_identifier_logged_once(caplog):
