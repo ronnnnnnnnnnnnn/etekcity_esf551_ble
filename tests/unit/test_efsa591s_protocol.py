@@ -164,6 +164,68 @@ class TestResultFrame:
         assert m.heart_rate is None
 
 
+class TestPlaintextOpcodes:
+    """
+    Captured from a live Etekcity_Apex (EFS-A591S) session where the scale
+    never answered KEY_EXCHANGE and streamed unencrypted 0x4121 / 0x413C
+    frames instead (HA issue #41, MAC 34:94:54:F1:F8:76 via ESPHome proxy).
+    """
+
+    LIVE = bytes.fromhex(
+        "a5020712003401214100981502000042d6756a0001010000"
+    )
+    # Final result: serial "7992861_", weight 136.60 kg, impedance 0
+    RESULT = bytes.fromhex(
+        "a5020e2700a8013c4100373939323836315f5f5f5f5f5f5f5f5f5f5f5f5f"
+        "0000981502000049d6756a01010100"
+    )
+    # Step-off live frame (weight 0) after the result
+    LIVE_ZERO = bytes.fromhex(
+        "a502101200bc0121410000000000005ad6756a0000000008"
+    )
+
+    def test_live_opcode_and_weight(self):
+        parsed = p.parse_frame(self.LIVE)
+        assert parsed is not None
+        assert parsed.opcode == p.OPCODE_MEASUREMENT_PLAIN
+        pt = p.plain_payload(parsed)
+        m = p.parse_measurement(pt)
+        assert m is not None
+        assert m.weight_kg == 136.6
+        assert m.final is False
+        assert m.impedance is None
+
+    def test_result_opcode_and_weight(self):
+        parsed = p.parse_frame(self.RESULT)
+        assert parsed is not None
+        assert parsed.opcode == p.OPCODE_RESULT_PLAIN
+        pt = p.plain_payload(parsed)
+        m = p.parse_result(pt)
+        assert m is not None
+        assert m.weight_kg == 136.6
+        assert m.final is True
+        # Impedance field is zero on this capture (stepped off / no BIA lock)
+        assert m.impedance is None
+        # Serial / name region starts with the ASCII device id
+        assert pt[0:7] == b"7992861"
+
+    def test_live_zero_weight_is_parseable(self):
+        parsed = p.parse_frame(self.LIVE_ZERO)
+        assert parsed is not None
+        assert parsed.opcode == p.OPCODE_MEASUREMENT_PLAIN
+        m = p.parse_measurement(p.plain_payload(parsed))
+        assert m is not None
+        assert m.weight_kg == 0.0
+
+    def test_plain_payload_reassembles_channel_byte(self):
+        parsed = p.parse_frame(self.LIVE)
+        # Without reassembly, the first weight byte is misread as "channel"
+        assert parsed.channel == 0x98
+        pt = p.plain_payload(parsed)
+        assert pt[0] == 0x98
+        assert pt[1:3] == bytes.fromhex("1502")
+
+
 class TestSetUnit:
     # Ground truth captured from the app (Frida): channel-1 session key/iv and the
     # exact ciphertext the app's AES doFinal produced for each unit's 0xa163 write.

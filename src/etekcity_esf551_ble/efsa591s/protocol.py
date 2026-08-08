@@ -16,6 +16,10 @@ Handshake / crypto summary
    encrypted with (key, zero-IV).
 5. Measurement frames (0x4421) are AES-CBC(key, iv); weight = uint24_le(pt[0:3]) / 1000 kg.
 
+Some Apex firmwares never answer the key exchange and instead stream the same
+measurement content unencrypted under opcodes 0x4121 (live) / 0x413C (final).
+Those frames share the decrypted body layout; see ``plain_payload``.
+
 This module is transport-agnostic and side-effect free so it can be unit tested
 against captured frames.
 """
@@ -38,9 +42,18 @@ FLAG_APP_WRITE = 0x23
 
 OPCODE_KEY_EXCHANGE = 0x4201  # OP_HIGH_SECURITY_KEY_EXCHANGE
 OPCODE_KEY_VERIFY = 0x4202  # OP_HIGH_SECURITY_KEY_VERIFY
-OPCODE_MEASUREMENT = 0x4421  # live weight push (resource 21 44 00)
-OPCODE_RESULT = 0x443A  # final result: weight + impedance (resource 3a 44 00)
+OPCODE_MEASUREMENT = 0x4421  # live weight push (resource 21 44 00), AES channel
+OPCODE_RESULT = 0x443A  # final result: weight + impedance (resource 3a 44 00), AES
 OPCODE_SET_UNIT = 0xA163  # config: set the scale's display unit (0=kg, 1=lb, 2=st)
+
+# Some EFS-A591S / Apex firmware revisions skip the DH handshake entirely and
+# stream unencrypted measurement frames with the 0x41xx resource family
+# instead of the AES 0x44xx family. Observed on MAC prefix 34:94:54 (Apex
+# advertising as "Etekcity_Apex"): live weight on 0x4121, final result on
+# 0x413C. The A5 header still has a "channel" byte at offset 10, but for
+# these opcodes that byte is the first payload byte (no separate channel).
+OPCODE_MEASUREMENT_PLAIN = 0x4121  # live weight push, no AES
+OPCODE_RESULT_PLAIN = 0x413C  # final result, no AES
 
 CHANNEL_PLAINTEXT = 0x00
 CHANNEL_AES = 0x01  # the AES-encrypted measurement channel
@@ -289,6 +302,19 @@ def decrypt_frame_payload(key: bytes, iv: bytes, parsed: ParsedFrame) -> bytes:
     ct = parsed.payload
     ct = ct[: len(ct) // 16 * 16]
     return _pkcs7_unpad(_aes_cbc_decrypt(key, iv, ct))
+
+
+def plain_payload(parsed: ParsedFrame) -> bytes:
+    """
+    Reconstruct the full payload of an unencrypted 0x41xx frame.
+
+    ``parse_frame`` always treats byte[10] as the channel selector. For the
+    AES opcodes that is correct (0x00 / 0x01). For the plaintext measurement
+    family (0x4121 / 0x413C) that byte is the first data byte — typically the
+    low byte of the live weight, or the first character of the device serial
+    on a final-result frame — so reassemble it with the rest of the payload.
+    """
+    return bytes([parsed.channel]) + parsed.payload
 
 
 def parse_measurement(plaintext: bytes) -> Measurement | None:
