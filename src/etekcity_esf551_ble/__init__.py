@@ -1,5 +1,5 @@
 from ._version import __version__, __version_info__
-from .body_metrics import BodyMetrics, Sex, calc_age
+from .body_metrics import BaseBodyMetrics, BodyMetrics, BodyMetricsV2, Sex, calc_age
 from .const import (
     DISPLAY_UNIT_KEY,
     HEART_RATE_KEY,
@@ -60,7 +60,9 @@ __all__ = [
     "IMPEDANCE_500KHZ_KEY",
     "IMPEDANCE_KEY",
     "WEIGHT_KEY",
+    "BaseBodyMetrics",
     "BodyMetrics",
+    "BodyMetricsV2",
     "Sex",
     "calc_age",
     "BluetoothScanningMode",
