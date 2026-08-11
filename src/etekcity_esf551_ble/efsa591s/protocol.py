@@ -359,7 +359,7 @@ def parse_result(plaintext: bytes) -> Measurement | None:
         display_unit = None
     # Heart rate is one byte near the end of the frame; 0 means "not measured"
     # (e.g. user stepped off before it locked, or not barefoot on the electrodes).
-    heart_rate = plaintext[36] if len(plaintext) >= 37 and plaintext[36] else None
+    heart_rate = plaintext[34] if len(plaintext) >= 35 and plaintext[34] else None
     return Measurement(
         weight_kg=round(weight, 2),
         impedance=impedance if 0 < impedance < 60000 else None,
