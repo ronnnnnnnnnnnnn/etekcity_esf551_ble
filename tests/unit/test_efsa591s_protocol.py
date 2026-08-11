@@ -171,18 +171,14 @@ class TestPlaintextOpcodes:
     frames instead (HA issue #41, MAC 34:94:54:F1:F8:76 via ESPHome proxy).
     """
 
-    LIVE = bytes.fromhex(
-        "a5020712003401214100981502000042d6756a0001010000"
-    )
+    LIVE = bytes.fromhex("a5020712003401214100981502000042d6756a0001010000")
     # Final result: serial "7992861_", weight 136.60 kg, impedance 0
     RESULT = bytes.fromhex(
         "a5020e2700a8013c4100373939323836315f5f5f5f5f5f5f5f5f5f5f5f5f"
         "0000981502000049d6756a01010100"
     )
     # Step-off live frame (weight 0) after the result
-    LIVE_ZERO = bytes.fromhex(
-        "a502101200bc0121410000000000005ad6756a0000000008"
-    )
+    LIVE_ZERO = bytes.fromhex("a502101200bc0121410000000000005ad6756a0000000008")
 
     def test_live_opcode_and_weight(self):
         parsed = p.parse_frame(self.LIVE)
@@ -200,7 +196,7 @@ class TestPlaintextOpcodes:
         assert parsed is not None
         assert parsed.opcode == p.OPCODE_RESULT_PLAIN
         pt = p.plain_payload(parsed)
-        m = p.parse_result(pt)
+        m = p.parse_result_plain(pt)
         assert m is not None
         assert m.weight_kg == 136.6
         assert m.final is True
@@ -208,6 +204,53 @@ class TestPlaintextOpcodes:
         assert m.impedance is None
         # Serial / name region starts with the ASCII device id
         assert pt[0:7] == b"7992861"
+        # The plaintext layout carries the display unit two bytes earlier than
+        # the encrypted frame (byte[33], not [35]); this capture was in lb.
+        assert m.display_unit == 1
+        # No heart rate on this capture (byte[34] == 0).
+        assert m.heart_rate is None
+
+    def test_plaintext_result_layout_differs_from_encrypted(self):
+        # Reusing the encrypted parser would still get weight and impedance
+        # (same offsets) but would misread the display unit off the frame's end.
+        pt = p.plain_payload(p.parse_frame(self.RESULT))
+        plain = p.parse_result_plain(pt)
+        encrypted_layout = p.parse_result(pt)
+        assert plain.weight_kg == encrypted_layout.weight_kg  # 136.6, shared
+        assert plain.display_unit == 1  # recovered
+        assert encrypted_layout.display_unit is None  # byte[35] is off the end
+
+    # Two barefoot weigh-ins on a physical EFS-A591S-KUS, contributed by
+    # @gthelding (PR #12), with the heart rate cross-checked against the BPM on
+    # the scale's own display. Unlike RESULT above (socks on, so impedance and
+    # HR both zero), these carry a real BIA impedance and pulse — the first
+    # plaintext frames that exercise the full result decode. Values are the
+    # reassembled payloads (as returned by plain_payload).
+    BAREFOOT_RESULTS = (
+        # payload, weight_kg, impedance, heart_rate
+        (
+            "373939323836315f5f5f5f5f5f5f5f5f5f5f5f5f0000021502ef00d4107b6a01010162",
+            136.45,
+            239,
+            98,
+        ),
+        (
+            "373939323836315f5f5f5f5f5f5f5f5f5f5f5f5f0000541802ee00be117b6a0101013a",
+            137.3,
+            238,
+            58,
+        ),
+    )
+
+    def test_barefoot_result_impedance_and_heart_rate(self):
+        for hex_pt, weight, impedance, heart_rate in self.BAREFOOT_RESULTS:
+            m = p.parse_result_plain(bytes.fromhex(hex_pt))
+            assert m is not None, hex_pt
+            assert m.final is True
+            assert m.weight_kg == weight
+            assert m.impedance == impedance
+            assert m.heart_rate == heart_rate  # byte[34], matches the scale display
+            assert m.display_unit == 1  # lb
 
     def test_live_zero_weight_is_parseable(self):
         parsed = p.parse_frame(self.LIVE_ZERO)

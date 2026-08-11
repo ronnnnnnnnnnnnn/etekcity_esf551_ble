@@ -172,10 +172,11 @@ class EFSA591SScale(GattScale):
             self._emit(meas, name, address)
         elif parsed.opcode == a5.OPCODE_RESULT_PLAIN:
             # Plaintext final-result path used by some Apex firmwares that never
-            # complete (or never offer) the DH/AES handshake. Same body layout
-            # as the decrypted 0x443A payload; see plain_payload().
+            # complete (or never offer) the DH/AES handshake. Its layout differs
+            # from the decrypted 0x443A payload past the weight field, so it has
+            # its own parser; see parse_result_plain() and plain_payload().
             pt = a5.plain_payload(parsed)
-            meas = a5.parse_result(pt)
+            meas = a5.parse_result_plain(pt)
             if meas is None or meas.weight_kg <= 0:
                 self._logger.debug(
                     "EFS-A591S plaintext result not parseable: %s", pt.hex()

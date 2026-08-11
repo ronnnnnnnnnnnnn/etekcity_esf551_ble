@@ -226,7 +226,7 @@ Experimental implementation for FIT-8S scales. Reads weight and impedance passiv
 
 #### `EFSA591SScale`
 
-Experimental implementation for EFS-A591S (Apex HR) scales. Uses an encrypted protocol over GATT with a Diffie-Hellman key exchange and AES-128-CBC encryption. Supports weight, impedance, heart rate and display unit management. Requires the device's real Bluetooth MAC address for key derivation.
+Experimental implementation for EFS-A591S (Apex HR) scales. Uses an encrypted protocol over GATT with a Diffie-Hellman key exchange and AES-128-CBC encryption, requiring the device's real Bluetooth MAC address for key derivation. Some Apex firmwares instead stream their measurements unencrypted; those are handled too (no key needed). Supports weight, impedance, heart rate and display unit management.
 
 #### `EFSC651Scale`
 
@@ -368,6 +368,7 @@ scan on
 - FIT-8S protocol support contributed by [@Flautz](https://github.com/Flautz) — thank you!
 - EFS-A591S (Apex HR) protocol support contributed by [@r3klawz](https://github.com/r3klawz) — thank you!
 - EFS-C651 protocol support contributed by [@tobsen111](https://github.com/tobsen111) — thank you!
+- EFS-A591S plaintext-firmware support contributed by [@gthelding](https://github.com/gthelding) — thank you!
 
 
 ## Support the Project

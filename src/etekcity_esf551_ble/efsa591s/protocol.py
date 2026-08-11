@@ -369,3 +369,34 @@ def parse_result(plaintext: bytes) -> Measurement | None:
         heart_rate=heart_rate,
         display_unit=display_unit,
     )
+
+
+def parse_result_plain(plaintext: bytes) -> Measurement | None:
+    """
+    Decode a plaintext final-result frame (0x413C).
+
+    Some EFS-A591S devices never complete the AES handshake and stream
+    the final result unencrypted.
+
+    Layout: [0:8]=serial ascii, [8:20]=name, [20:22]=00, [22:25]=weight grams
+    (uint24 LE) /1000 kg, [25:27]=impedance (uint16 LE) ohms, [27:31]=timestamp,
+    [33]=display unit (0=kg, 1=lb, 2=st), [34]=heart rate (bpm, 0 until measured).
+    """
+    if len(plaintext) < 31:
+        return None
+    weight = int.from_bytes(plaintext[22:25], "little") / 1000.0
+    impedance = struct.unpack("<H", plaintext[25:27])[0]
+    timestamp = struct.unpack("<I", plaintext[27:31])[0]
+    display_unit = plaintext[33] if len(plaintext) >= 34 else None
+    if display_unit not in (0, 1, 2):
+        display_unit = None
+    heart_rate = plaintext[34] if len(plaintext) >= 35 and plaintext[34] else None
+    return Measurement(
+        weight_kg=round(weight, 2),
+        impedance=impedance if 0 < impedance < 60000 else None,
+        timestamp=timestamp,
+        final=True,
+        raw=plaintext,
+        heart_rate=heart_rate,
+        display_unit=display_unit,
+    )
