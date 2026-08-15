@@ -1,6 +1,6 @@
-# Etekcity ESF-551, ESF-24, FIT-8S, EFS-A591S & EFS-C651 BLE
+# Etekcity ESF-551, ESF-24, FIT-8S, EFS-A591S, EFS-C651 & ESF-37 BLE
 
-This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale) and [Etekcity EFS-C651](https://etekcity.com/collections/fitness-scales/products/cobra-dark-blue) models.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s), [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale), [Etekcity EFS-C651](https://etekcity.com/collections/fitness-scales/products/cobra-dark-blue) and [Etekcity ESF-37](https://etekcity.com/products/smart-fitness-scale-esf37) models.
 
 ## Features
 
@@ -9,6 +9,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 - **FIT-8S**: Experimental support (weight, impedance, body metrics)
 - **EFS-A591S (Apex HR)**: Experimental support (weight, impedance, heart rate, body metrics, unit changes)
 - **EFS-C651**: Experimental support (weight, impedance, body metrics, unit changes)
+- **ESF-37**: Experimental support (weight only)
 - Easy connection and notification handling
 - Body composition metrics for any impedance-capable scale, with optional athlete mode. Two calculators are provided, matching the two algorithms the app uses: `BodyMetrics` for the ESF-551, ESF-24, FIT-8S and EFS-A591S, and `BodyMetricsV2` for the EFS-C651. They share a common set of metrics, so they can be used interchangeably — see [Body metrics](#body-metrics)
 - Display unit management (ESF-551, EFS-A591S, EFS-C651 and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
@@ -22,6 +23,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 | ESF-24 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
 | FIT-8S | 🔬 Experimental | Weight, impedance, body metrics |
 | EFS-C651 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
+| ESF-37 | 🔬 Experimental | Weight only (scale sends both kg and lb over BLE) |
 
 **Disclaimer: This is an unofficial, community-developed library. It is not affiliated with, officially maintained by or in any way officially connected with Etekcity, VeSync Co., Ltd. (the owner of the Etekcity brand) or any of their subsidiaries or affiliates. The official Etekcity website can be found at https://www.etekcity.com, and the official VeSync website at https://www.vesync.com. The names "Etekcity" and "VeSync" as well as related names, marks, emblems and images are registered trademarks of their respective owners.**
 
@@ -119,6 +121,11 @@ scale = FIT8SScale(address, callback)
 # EFS-C651 (experimental, encrypted)
 from etekcity_esf551_ble import EFSC651Scale
 scale = EFSC651Scale(address, callback)
+
+# ESF-37 (experimental, weight only — no advertisement signature known yet,
+# so detect_model() won't classify it; construct the client directly)
+from etekcity_esf551_ble import ESF37Scale
+scale = ESF37Scale(address, callback)
 ```
 
 For a real-life usage example of this library, check out the [Etekcity Fitness Scale BLE Integration for Home Assistant](https://github.com/ronnnnnnnnnnnnn/etekcity_fitness_scale_ble).
@@ -194,7 +201,7 @@ The scale classes form a small hierarchy by transport:
 
 ```
 EtekcitySmartFitnessScale (abstract: scanning + lifecycle + callback)
-├── GattScale (abstract: GATT connection + cooldown_seconds) → ESF551Scale, ESF24Scale, EFSA591SScale
+├── GattScale (abstract: GATT connection + cooldown_seconds) → ESF551Scale, ESF24Scale, EFSA591SScale, ESF37Scale
 └── AdvertisementScale (abstract: reads advertisements; unit observed-only) → FIT8SScale
 ```
 
@@ -231,6 +238,10 @@ Experimental implementation for EFS-A591S (Apex HR) scales. Uses an encrypted pr
 #### `EFSC651Scale`
 
 Experimental implementation for EFS-C651 scales. Uses the same encrypted protocol as the EFS-A591S, and likewise requires the device's real Bluetooth MAC address for key derivation. Supports weight, impedance and display unit management; this model has no heart-rate sensor. Impedance is reported in an encoded form specific to this model and is decoded into ohms by the library.
+
+#### `ESF37Scale`
+
+Experimental implementation for ESF-37 scales, weight only. Uses its own vendor-specific GATT service rather than the `0xfff1`/`0xfff2` characteristics the ESF-551 and friends share, and a small framed command protocol (magic + command + length + payload + checksum) instead. Each measurement frame carries the weight pre-converted to both kg and lb (the library only reads the kg field); no onboard user-profile step is needed — the scale streams weight to any client that completes a short time-sync + init handshake. No hardware/software version, display-unit control or body composition support — none of those had a confirmed characteristic or field in the capture this was built from.
 
 #### Common Methods:
 

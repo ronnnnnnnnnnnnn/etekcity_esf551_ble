@@ -25,6 +25,7 @@ from .detection import (
 from .efsa591s import EFSA591SScale
 from .efsc651 import EFSC651Scale
 from .esf24 import ESF24Scale
+from .esf37 import ESF37Scale
 from .esf551 import ESF551Scale
 from .fit8s import FIT8SScale
 from .scale import (
@@ -41,6 +42,7 @@ SCALE_CLASSES: dict[ScaleModel, type[EtekcitySmartFitnessScale]] = {
     ScaleModel.FIT8S: FIT8SScale,
     ScaleModel.EFSA591S: EFSA591SScale,
     ScaleModel.EFSC651: EFSC651Scale,
+    ScaleModel.ESF37: ESF37Scale,
 }
 
 __all__ = [
@@ -54,6 +56,7 @@ __all__ = [
     "FIT8SScale",
     "EFSA591SScale",
     "EFSC651Scale",
+    "ESF37Scale",
     "WeightUnit",
     "ScaleData",
     "HEART_RATE_KEY",

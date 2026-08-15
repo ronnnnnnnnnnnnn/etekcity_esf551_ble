@@ -62,6 +62,7 @@ class ScaleModel(StrEnum):
     FIT8S = "FIT-8S"
     EFSA591S = "EFS-A591S"
     EFSC651 = "EFS-C651"
+    ESF37 = "ESF-37"
 
 
 def parse_model_code(payload: bytes) -> int | None:
@@ -132,6 +133,11 @@ def _parse_qn_model_code(payload: bytes, address: str | None) -> int | None:
 
 # Model-identifier registries. Unlisted/unknown variants are covered by FALLBACK_MATCHERS.
 # Add new codes here as units are reported.
+#
+# ESF-37 (added below in ScaleModel/SCALE_CLASSES/CAPABILITIES) has no entry
+# here: the manufacturer-data advertisement was never captured for it, only
+# its GATT protocol, so auto-detection would be a guess. It's manual-picker
+# only for now — add its code/pattern once someone captures the advertisement.
 MODEL_CODES: dict[int, ScaleModel] = {
     1: ScaleModel.ESF551,
     2: ScaleModel.ESF551,
@@ -321,5 +327,8 @@ CAPABILITIES: dict[ScaleModel, ScaleCapabilities] = {
     ),
     ScaleModel.EFSC651: ScaleCapabilities(
         has_impedance=True, has_heart_rate=False, display_unit_settable=True
+    ),
+    ScaleModel.ESF37: ScaleCapabilities(
+        has_impedance=False, has_heart_rate=False, display_unit_settable=False
     ),
 }
