@@ -29,6 +29,12 @@ class ScaleData:
         sw_version (str): Software version of the scale.
         display_unit (WeightUnit): Current display unit of the scale.
         measurements (dict): Dictionary containing measurement data.
+        timestamp (str | None): ISO-format time the measurement was actually
+            taken, for models that can report readings from the past (e.g.
+            a scale's own stored-history backlog, flushed on connect).
+            ``None`` (the default) means "just now" — callers should treat
+            that as the normal case and fall back to the current time
+            themselves; nothing sets it for a live/in-the-moment reading.
     """
 
     name: str = ""
@@ -39,3 +45,4 @@ class ScaleData:
     measurements: dict[str, str | float | None] = dataclasses.field(
         default_factory=dict
     )
+    timestamp: str | None = None

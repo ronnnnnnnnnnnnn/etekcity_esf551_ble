@@ -49,11 +49,46 @@ formula (if either, unmodified) the ESF-37's companion app actually uses,
 so this module does not attempt to compute them. Wiring that up needs the
 household's real profile (exact height/age/sex, athlete flag) to fit
 against, not just a BMI-derived height guess.
+
+The scale also stores a backlog of past readings on-device and flushes it
+as a batch when a phone connects, command ``0xd4``, 13-byte payload, one
+frame per stored reading::
+
+    [0]     sequence number within this batch, 1-indexed
+    [1:6]   always zero in every capture seen; meaning unknown
+    [6]     constant 0x02 in every capture seen; meaning unknown (same
+            value as the live frame's per-byte-5 constant, offset by one
+            here — not confirmed to mean the same thing)
+    [7:9]   weight, big-endian uint16, hundredths of a pound
+    [9:13]  unix timestamp (seconds), big-endian uint32
+
+Decoded against two real historical batches (22 records total) spanning
+2026-08-10 to 2026-08-17: weight and timestamp both check out against the
+VeSync app's own history list for several of those dates. Two records (out
+of 22) didn't fit this decode at all — plausible readings from a different
+household member profile the scale doesn't distinguish at the protocol
+level (see :func:`parse_history_record`), or a record sub-type not
+understood yet. Only weight comes back this way — there is no body fat%
+field in the history-batch format at all (13 bytes doesn't leave room for
+one), confirmed by checking the closest-in-time historical records to a
+live BIA reading and finding no expanded frame. Body fat% is only ever
+available live, in the moment, over the ``0xd0`` frame above.
+
+**Unconfirmed**: whether skipping the app's per-user profile push
+(``0xc1``/``0xc2`` — see :class:`~.scale.ESF37Scale`'s docstring for why
+weight-only support skips it) also skips the history-batch flush. Every
+capture this was reverse-engineered from included the full profile-push
+handshake; nobody has yet confirmed a history flush still happens with
+just time-sync + init. If it turns out not to, sending the profile-push
+sequence for real (not just replaying a captured payload — its own tail
+bytes aren't understood well enough to construct one with confidence yet)
+would be needed to make this feature actually fire.
 """
 
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime
 
 from ..const import BODY_FAT_PERCENTAGE_KEY, WEIGHT_KEY
 
@@ -62,11 +97,16 @@ MAGIC = b"\xfe\xef\xc0\xa3"
 CMD_TIME_SYNC = 0xC6
 CMD_INIT = 0xC0
 CMD_MEASUREMENT = 0xD0
+CMD_HISTORY = 0xD4
 
 _STATUS_FINAL = 0x01
 _BIA_COMPLETE = 0x02
 _MEASUREMENT_PAYLOAD_LENGTH = 8
 _MEASUREMENT_FRAME_LENGTH = len(MAGIC) + 2 + _MEASUREMENT_PAYLOAD_LENGTH + 1
+
+_HISTORY_PAYLOAD_LENGTH = 13
+_HISTORY_FRAME_LENGTH = len(MAGIC) + 2 + _HISTORY_PAYLOAD_LENGTH + 1
+_LB_TO_KG = 0.453_592_37
 
 
 def _checksum(body: bytes) -> int:
@@ -135,3 +175,40 @@ def parse_weight(payload: bytearray) -> dict[str, float] | None:
     if payload[12] == _BIA_COMPLETE:
         data[BODY_FAT_PERCENTAGE_KEY] = float(payload[13])
     return data
+
+
+def is_history_frame(payload: bytearray) -> bool:
+    """Return True if ``payload`` has the ESF-37 history-batch frame shape.
+
+    See :func:`parse_history_record` for turning one into a reading.
+    """
+    if len(payload) != _HISTORY_FRAME_LENGTH:
+        return False
+    if bytes(payload[0:4]) != MAGIC or payload[4] != CMD_HISTORY:
+        return False
+    if payload[5] != _HISTORY_PAYLOAD_LENGTH:
+        return False
+    body = bytes(payload[4 : 4 + 2 + _HISTORY_PAYLOAD_LENGTH])
+    return payload[-1] == _checksum(body)
+
+
+def parse_history_record(payload: bytearray) -> dict[str, float | datetime] | None:
+    """Parse one record from the scale's on-connect history-batch flush.
+
+    Returns a dict with ``"weight"`` (kilograms, converted from the
+    on-the-wire hundredths-of-a-pound field — see the module docstring for
+    why there's no lb-native field to prefer here, unlike
+    :func:`parse_weight`) and ``"timestamp"`` (timezone-aware UTC
+    :class:`~datetime.datetime`, decoded straight from the record's own
+    unix timestamp — not "now"). Never includes body fat% or any other
+    body-composition key; the format has no room for one.
+
+    Returns None if ``payload`` isn't a valid history-batch frame.
+    """
+    if not is_history_frame(payload):
+        return None
+    weight_centipounds = int.from_bytes(payload[13:15], "big")
+    weight_kg = round(weight_centipounds / 100 * _LB_TO_KG, 2)
+    unix_seconds = int.from_bytes(payload[15:19], "big")
+    timestamp = datetime.fromtimestamp(unix_seconds, tz=UTC)
+    return {WEIGHT_KEY: weight_kg, "timestamp": timestamp}

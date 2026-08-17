@@ -5,7 +5,12 @@ from bleak.backends.device import BLEDevice
 
 from ..data import ScaleData
 from ..scale import GattScale
-from .protocol import build_init_command, build_time_sync_command, parse_weight
+from .protocol import (
+    build_init_command,
+    build_time_sync_command,
+    parse_history_record,
+    parse_weight,
+)
 
 #: Vendor-specific service 0000191x; characteristics don't use the shared
 #: 0xfff1/0xfff2 UUIDs the ESF-551 and friends do.
@@ -25,7 +30,17 @@ class ESF37Scale(GattScale):
     entirely, needing only the time-sync (``0xc6``) and init (``0xc0``)
     commands. Per-person disambiguation is therefore left entirely to the
     caller (e.g. matching against each household member's recent weight
-    history), not the scale.
+    history), not the scale. Whether skipping the profile push also skips
+    the scale's on-connect history-batch flush (see below) is not
+    confirmed — every capture this was built from included the full
+    profile-push handshake.
+
+    Any history-batch records (see :func:`~.protocol.parse_history_record`)
+    the scale sends unprompted are reported through the same callback as a
+    live reading, with :attr:`~etekcity_esf551_ble.data.ScaleData.timestamp`
+    set to when that reading actually happened instead of "now" — callers
+    that care about historical backfill should route on that field, not
+    assume every callback is a fresh weigh-in.
 
     Limitations:
     - No hardware/software version reading — the Device Information
@@ -96,4 +111,19 @@ class ESF37Scale(GattScale):
             scale_data.name = name
             scale_data.address = address
             scale_data.measurements = parsed
+            self._notification_callback(scale_data)
+        elif record := parse_history_record(payload):
+            timestamp = record.pop("timestamp")
+            self._logger.debug(
+                "Received history-batch record from %s (%s): %s at %s",
+                name,
+                address,
+                record,
+                timestamp,
+            )
+            scale_data = ScaleData()
+            scale_data.name = name
+            scale_data.address = address
+            scale_data.measurements = record
+            scale_data.timestamp = timestamp.isoformat()
             self._notification_callback(scale_data)
