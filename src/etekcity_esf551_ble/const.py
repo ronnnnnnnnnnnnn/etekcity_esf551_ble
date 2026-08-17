@@ -8,8 +8,10 @@ WEIGHT_KEY = "weight"
 IMPEDANCE_KEY = "impedance"
 IMPEDANCE_500KHZ_KEY = "impedance_500khz"
 HEART_RATE_KEY = "heart_rate"
+BODY_FAT_PERCENTAGE_KEY = "body_fat_percentage"
 
 __all__ = [
+    "BODY_FAT_PERCENTAGE_KEY",
     "DISPLAY_UNIT_KEY",
     "HEART_RATE_KEY",
     "IMPEDANCE_500KHZ_KEY",

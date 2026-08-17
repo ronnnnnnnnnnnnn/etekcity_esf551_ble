@@ -32,9 +32,13 @@ class ESF37Scale(GattScale):
       service on this model exposes only a PnP ID.
     - No display-unit control — no equivalent of the ESF-551's Aliro
       characteristic was found.
-    - No body composition — the final frame carries a few reserved bytes
-      beyond the weight fields, but no impedance/BIA field could be
-      confirmed from the capture this was built from.
+    - Body composition beyond fat% is not available — the final frame's
+      last reserved byte lines up with the app's displayed body fat
+      percentage (see :func:`~.protocol.parse_weight`), but the scale
+      never transmits raw impedance, so BMI/water%/muscle mass/bone mass/
+      BMR/visceral+subcutaneous fat/protein%/metabolic age (all derived
+      client-side by the app from weight + fat% + profile) are not
+      reproduced here.
     """
 
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:

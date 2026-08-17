@@ -48,6 +48,24 @@ def test_parse_weight_265lb_reading():
     assert data == {"weight": 120.20}
 
 
+def test_parse_weight_with_body_fat_percentage():
+    # Real capture, live weigh-in (2026-08-17 17:19): 226 lb, app-displayed
+    # body fat 35.5% for this household member -> byte 13 decodes to 35
+    # (truncated, not rounded -- only one ground-truth reading confirms
+    # this so far, see the module docstring).
+    frame = bytearray.fromhex("feefc0a3d008280a584801020223d2")
+    data = parse_weight(frame)
+    assert data == {"weight": 102.50, "body_fat_percentage": 35.0}
+
+
+def test_parse_weight_omits_body_fat_percentage_without_bia_contact():
+    # Same shape as the 142lb reading: BIA-complete byte (index 12) is
+    # 0x00, so no body_fat_percentage key is added.
+    frame = bytearray.fromhex("feefc0a3d0081928377801020000cb")
+    data = parse_weight(frame)
+    assert data == {"weight": 64.40}
+
+
 def test_parse_weight_rejects_settling_frame():
     # Same frame as the 142lb reading above but with status=0x00: dozens of
     # these stream before the final one during a weigh-in.
