@@ -77,6 +77,14 @@ class ESF37Scale(GattScale):
     def _notification_handler(
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
     ) -> None:
+        # Raw hex, unconditionally: the parsed dict alone can't show things
+        # like the fat% byte's exact rounding behaviour at a boundary value,
+        # only the frame it came from can. Cheap enough to always log at
+        # debug level — see the esf37/protocol.py module docstring for what
+        # is and isn't confirmed yet about this frame format.
+        self._logger.debug(
+            "Raw ESF-37 notification from %s (%s): %s", name, address, payload.hex()
+        )
         if parsed := parse_weight(payload):
             self._logger.debug(
                 "Received stable weight notification from %s (%s): %s",
