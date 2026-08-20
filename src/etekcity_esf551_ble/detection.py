@@ -14,7 +14,7 @@ Company ID 1744 (Etekcity platform)::
     [7:9]  model identifier, 16-bit big-endian
     [9:]   model-specific payload (e.g. FIT-8S live weight)
 
-Company ID 65535 (QN platform, used by the ESF-24)::
+Company ID 65535 (QN platform, used by the ESF-24 and ESF-17/18)::
 
     [0:2]  model identifier, 16-bit big-endian
     [2]    0x01 in all captures
@@ -62,6 +62,8 @@ class ScaleModel(StrEnum):
     FIT8S = "FIT-8S"
     EFSA591S = "EFS-A591S"
     EFSC651 = "EFS-C651"
+    ESF17 = "ESF-17"
+    ESF18 = "ESF-18"
 
 
 def parse_model_code(payload: bytes) -> int | None:
@@ -145,6 +147,9 @@ MODEL_CODES: dict[int, ScaleModel] = {
 
 QN_MODEL_CODES: dict[int, ScaleModel] = {
     294: ScaleModel.ESF24,
+    946: ScaleModel.ESF24,
+    211: ScaleModel.ESF17,
+    671: ScaleModel.ESF18,
 }
 
 # (company_id, identifier) pairs already reported via the fallback-path
@@ -320,6 +325,12 @@ CAPABILITIES: dict[ScaleModel, ScaleCapabilities] = {
         has_impedance=True, has_heart_rate=True, display_unit_settable=True
     ),
     ScaleModel.EFSC651: ScaleCapabilities(
+        has_impedance=True, has_heart_rate=False, display_unit_settable=True
+    ),
+    ScaleModel.ESF17: ScaleCapabilities(
+        has_impedance=True, has_heart_rate=False, display_unit_settable=True
+    ),
+    ScaleModel.ESF18: ScaleCapabilities(
         has_impedance=True, has_heart_rate=False, display_unit_settable=True
     ),
 }

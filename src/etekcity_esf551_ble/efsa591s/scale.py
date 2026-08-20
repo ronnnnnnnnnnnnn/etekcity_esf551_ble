@@ -69,9 +69,7 @@ class EFSA591SScale(GattScale):
         notify_char = self._client.services.get_characteristic(
             WEIGHT_CHARACTERISTIC_UUID_NOTIFY
         )
-        write_char = self._client.services.get_characteristic(
-            ALIRO_CHARACTERISTIC_UUID
-        )
+        write_char = self._client.services.get_characteristic(ALIRO_CHARACTERISTIC_UUID)
         if not notify_char or not write_char:
             # Service discovery can transiently come back incomplete; raising
             # lets the base disconnect and retry on the next advertisement

@@ -24,6 +24,7 @@ PURIFIER_PAYLOAD = bytes.fromhex(
     "018e31e5519140c623020202"
 )  # air purifier, code 0xC623
 ESF24_PAYLOAD = bytes.fromhex("012601000607aa0b44ac04")  # QN frame, code 0x0126
+ESF17_PAYLOAD = bytes.fromhex("00d30100005b0d1cfefefe")  # QN frame, code 0x00D3
 RENPHO_QN_PAYLOAD = bytes.fromhex(
     "09e900000003aa670003ff"
 )  # foreign QN scale, code 0x09E9
@@ -47,6 +48,8 @@ def test_scale_model_values_are_stable():
     assert ScaleModel.FIT8S.value == "FIT-8S"
     assert ScaleModel.EFSA591S.value == "EFS-A591S"
     assert ScaleModel.EFSC651.value == "EFS-C651"
+    assert ScaleModel.ESF17.value == "ESF-17"
+    assert ScaleModel.ESF18.value == "ESF-18"
 
 
 def test_parse_model_code_reads_be16_at_offset_7():
@@ -68,7 +71,9 @@ def test_registry_covers_known_variants():
         (ScaleModel.ESF551, MFR): (1, 2),
         (ScaleModel.EFSA591S, MFR): (3, 5, 127, 134),
         (ScaleModel.FIT8S, MFR): (49321,),
-        (ScaleModel.ESF24, QN): (294,),
+        (ScaleModel.ESF24, QN): (294, 946),
+        (ScaleModel.ESF17, QN): (211,),
+        (ScaleModel.ESF18, QN): (671,),
     }
     for (model, mfr_id), codes in expected.items():
         for code in codes:
@@ -177,8 +182,37 @@ def test_foreign_qn_scale_rejected():
 
 
 def test_detect_esf24_by_name_without_mfr_data():
+    # The ESF-17 advertises the same name, so without manufacturer data the
+    # name alone cannot separate the two — the fallback deliberately reports
+    # ESF-24 (protocol-identical; only the reported model name differs).
     assert detect_model("QN-Scale1", {}) == ScaleModel.ESF24
     assert detect_model("QN-Scale1", None) == ScaleModel.ESF24
+
+
+def test_detect_esf17_real_capture():
+    # Issue #43 capture: QN frame code 0x00D3 (211), MAC FE:FE:FE:1C:0D:5B.
+    assert (
+        detect_model("QN-Scale1", {QN: ESF17_PAYLOAD}, address="FE:FE:FE:1C:0D:5B")
+        == ScaleModel.ESF17
+    )
+
+
+def test_detect_esf17_passive_no_name():
+    # The registered code alone identifies it; the shared QN-Scale1 name
+    # fallback (which would say ESF-24) must not be consulted.
+    assert (
+        detect_model(None, {QN: ESF17_PAYLOAD}, address="FE:FE:FE:1C:0D:5B")
+        == ScaleModel.ESF17
+    )
+
+
+def test_esf17_frame_requires_mac_echo_when_address_given():
+    assert (
+        detect_model("QN-Scale1", {QN: ESF17_PAYLOAD}, address="AA:BB:CC:DD:EE:FF")
+        == ScaleModel.ESF24
+    )
+    # Without the name there is nothing left to match on.
+    assert detect_model(None, {QN: ESF17_PAYLOAD}, address="AA:BB:CC:DD:EE:FF") is None
 
 
 def test_rejects_non_scale_1744_device():
@@ -387,6 +421,10 @@ def test_every_model_has_capabilities():
 
 def test_capability_flags():
     assert CAPABILITIES[ScaleModel.ESF24].has_impedance is True
+    assert CAPABILITIES[ScaleModel.ESF17].has_impedance is True
+    assert CAPABILITIES[ScaleModel.ESF17].display_unit_settable is True
+    assert CAPABILITIES[ScaleModel.ESF18].has_impedance is True
+    assert CAPABILITIES[ScaleModel.ESF18].display_unit_settable is True
     assert CAPABILITIES[ScaleModel.ESF551].has_impedance is True
     assert CAPABILITIES[ScaleModel.FIT8S].has_impedance is True
     assert CAPABILITIES[ScaleModel.EFSA591S].has_impedance is True
@@ -412,6 +450,8 @@ def test_public_api_exports():
     assert lib.SCALE_CLASSES[ScaleModel.ESF551] is lib.ESF551Scale
     assert lib.SCALE_CLASSES[ScaleModel.ESF24] is lib.ESF24Scale
     assert lib.SCALE_CLASSES[ScaleModel.FIT8S] is lib.FIT8SScale
+    assert lib.SCALE_CLASSES[ScaleModel.ESF17] is lib.ESF24Scale
+    assert lib.SCALE_CLASSES[ScaleModel.ESF18] is lib.ESF24Scale
     assert "SCALE_CLASSES" in lib.__all__
     for name in lib.__all__:
         assert hasattr(lib, name), f"__all__ exports missing attribute: {name}"

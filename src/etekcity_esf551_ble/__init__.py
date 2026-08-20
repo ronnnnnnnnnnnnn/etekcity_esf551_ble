@@ -42,6 +42,8 @@ SCALE_CLASSES: dict[ScaleModel, type[EtekcitySmartFitnessScale]] = {
     ScaleModel.FIT8S: FIT8SScale,
     ScaleModel.EFSA591S: EFSA591SScale,
     ScaleModel.EFSC651: EFSC651Scale,
+    ScaleModel.ESF17: ESF24Scale,
+    ScaleModel.ESF18: ESF24Scale,
 }
 
 __all__ = [

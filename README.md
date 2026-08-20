@@ -1,17 +1,18 @@
-# Etekcity ESF-551, ESF-24, FIT-8S, EFS-A591S & EFS-C651 BLE
+# Etekcity ESF-551, ESF-24, ESF-17, ESF-18, FIT-8S, EFS-A591S & EFS-C651 BLE
 
-This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale) and [Etekcity EFS-C651](https://etekcity.com/collections/fitness-scales/products/cobra-dark-blue) models.
+This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s) [Etekcity ESF-17/18](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf18), [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale) and [Etekcity EFS-C651](https://etekcity.com/collections/fitness-scales/products/cobra-dark-blue) models.
 
 ## Features
 
 - **ESF-551**: Fully supported and stable (weight, impedance, body metrics, display unit management)
 - **ESF-24**: Experimental support (weight, impedance, body metrics, unit changes)
+- **ESF-17/18**: Experimental support (weight, impedance, body metrics, unit changes) — protocol-identical to the ESF-24 and handled by the same client class
 - **FIT-8S**: Experimental support (weight, impedance, body metrics)
 - **EFS-A591S (Apex HR)**: Experimental support (weight, impedance, heart rate, body metrics, unit changes)
 - **EFS-C651**: Experimental support (weight, impedance, body metrics, unit changes)
 - Easy connection and notification handling
-- Body composition metrics for any impedance-capable scale, with optional athlete mode. Two calculators are provided, matching the two algorithms the app uses: `BodyMetrics` for the ESF-551, ESF-24, FIT-8S and EFS-A591S, and `BodyMetricsV2` for the EFS-C651. They share a common set of metrics, so they can be used interchangeably — see [Body metrics](#body-metrics)
-- Display unit management (ESF-551, EFS-A591S, EFS-C651 and ESF-24 only, programmatic display unit control isn't supported on advertisement-based scales)
+- Body composition metrics for any impedance-capable scale, with optional athlete mode. Two calculators are provided, matching the two algorithms the app uses: `BodyMetrics` for the ESF-551, ESF-24, ESF-17, ESF-18, FIT-8S and EFS-A591S, and `BodyMetricsV2` for the EFS-C651. They share a common set of metrics, so they can be used interchangeably — see [Body metrics](#body-metrics)
+- Display unit management (not supported on advertisement-based scales like FIT-8S)
 
 ## Supported Models
 
@@ -20,6 +21,8 @@ This package provides a basic unofficial interface for interacting with Etekcity
 | ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
 | EFS-A591S | 🔬 Experimental | Weight, impedance, heart rate, body metrics, unit changes |
 | ESF-24 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
+| ESF-17 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
+| ESF-18 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
 | FIT-8S | 🔬 Experimental | Weight, impedance, body metrics |
 | EFS-C651 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
 
@@ -108,7 +111,8 @@ scale = ESF551Scale(address, callback)
 from etekcity_esf551_ble import EFSA591SScale
 scale = EFSA591SScale(address, callback)
 
-# ESF-24 (experimental)
+# ESF-24, ESF-17 and ESF-18 (experimental — they share the ESF-24's protocol
+# and client class)
 from etekcity_esf551_ble import ESF24Scale
 scale = ESF24Scale(address, callback)
 
@@ -181,7 +185,9 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 | EFS-A591S | 1744 | 3 (0x0003), 5 (0x0005), 127 (0x007F), 134 (0x0086) |
 | EFS-C651 | 1744 | 136 (0x0088) |
 | FIT-8S | 1744 | 49321 (0xC0A9) |
-| ESF-24 | 65535 | 294 (0x0126) |
+| ESF-24 | 65535 | 294 (0x0126), 946 (0x03B2) |
+| ESF-17 | 65535 | 211 (0x00D3) |
+| ESF-18 | 65535 | 671 (0x029F) |
 
 Identifiers are compared as the full 16-bit value, with frame-shape and MAC-echo validation. Codes for other variants are added as units are reported — when a name/address fallback matcher identifies a device whose identifier isn't in the registry yet, `detect_model` logs the identifier so it can be reported and added to the registry — and those fallback matchers cover unlisted variants in the meantime.
 
@@ -216,7 +222,7 @@ Implementation for ESF-551 scales with full feature support.
 
 #### `ESF24Scale`
 
-Experimental implementation for ESF-24 scales. Reports weight and dual-band BIA impedance: the 50 kHz value under `IMPEDANCE_KEY` (usable with `BodyMetrics`) and the raw 500 kHz value under `IMPEDANCE_500KHZ_KEY` (ESF-24 only).
+Experimental implementation for ESF-24 scales — and for the ESF-17/18, which speaks the same protocol and shares this client class. Reports weight and dual-band BIA impedance: the 50 kHz value under `IMPEDANCE_KEY` (usable with `BodyMetrics`) and the raw 500 kHz value under `IMPEDANCE_500KHZ_KEY` (ESF-24 and ESF-17/ only).
 
 Accepts the keyword-only argument `clear_stored_measurements: bool = False`. When enabled, the library drains the scale's store of offline measurements — readings taken while nothing was connected — once per session. Receiving a stored reading deletes it from the scale (the protocol has no separate delete command), so enabling this hides those readings from any other client: leave it off if you also sync the scale with the official VeSync app. Drained readings are logged at debug level and discarded for now.
 

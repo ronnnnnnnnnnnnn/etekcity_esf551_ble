@@ -210,9 +210,7 @@ def test_is_stored_measurement_frame():
     assert is_stored_measurement_frame(
         bytearray.fromhex("231415000000000000000000000000000000004c")
     )
-    assert not is_stored_measurement_frame(
-        bytearray.fromhex("100b152b4801016b013445")
-    )
+    assert not is_stored_measurement_frame(bytearray.fromhex("100b152b4801016b013445"))
     assert not is_stored_measurement_frame(bytearray.fromhex("23141501016e6e7330"))
     assert not is_stored_measurement_frame(
         bytearray.fromhex("2313ff04015dcdb6311cd901fc01f00000002e")
