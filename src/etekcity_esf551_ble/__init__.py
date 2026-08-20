@@ -31,6 +31,7 @@ from .scale import (
     AdvertisementScale,
     EtekcitySmartFitnessScale,
     GattScale,
+    ScaleSessionError,
 )
 
 # Model -> concrete client class. detection.py stays import-light (no client
@@ -56,6 +57,7 @@ __all__ = [
     "EFSC651Scale",
     "WeightUnit",
     "ScaleData",
+    "ScaleSessionError",
     "HEART_RATE_KEY",
     "IMPEDANCE_500KHZ_KEY",
     "IMPEDANCE_KEY",

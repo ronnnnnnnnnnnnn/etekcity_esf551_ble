@@ -9,7 +9,7 @@ from ..const import (
     ALIRO_CHARACTERISTIC_UUID,
     WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
 )
-from ..scale import GattScale
+from ..scale import GattScale, ScaleSessionError
 from ..data import (
     BluetoothScanningMode,
     ScaleData,
@@ -100,29 +100,27 @@ class ESF24Scale(GattScale):
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
         """Handle post-connection setup and start notifications."""
         self._state_mask = 0
-        try:
-            self._logger.debug(
-                "ESF-24 starting session for device %s (%s)",
-                ble_device.name,
-                ble_device.address,
+        self._logger.debug(
+            "ESF-24 starting session for device %s (%s)",
+            ble_device.name,
+            ble_device.address,
+        )
+        if weight_char := self._client.services.get_characteristic(
+            WEIGHT_CHARACTERISTIC_UUID_NOTIFY
+        ):
+            await self._client.start_notify(
+                weight_char,
+                lambda char, data: self._notification_handler(
+                    char, data, ble_device.name, ble_device.address
+                ),
             )
-            if weight_char := self._client.services.get_characteristic(
-                WEIGHT_CHARACTERISTIC_UUID_NOTIFY
-            ):
-                await self._client.start_notify(
-                    weight_char,
-                    lambda char, data: self._notification_handler(
-                        char, data, ble_device.name, ble_device.address
-                    ),
-                )
-            else:
-                self._logger.error("Weight notification characteristic not found")
-                # With Bluetooth proxies, services may not be immediately available.
-                # Don't force disconnect - let it fail naturally or timeout.
-                return
-        except Exception as ex:
-            self._logger.exception("%s(%s)", type(ex), ex.args)
-            self._client = None
+        else:
+            # Service discovery can transiently come back without the notify
+            # characteristic; raising lets the base disconnect and retry on the next
+            # advertisement instead of parking a dead client.
+            raise ScaleSessionError(
+                "ESF-24 weight notification characteristic not found"
+            )
 
     def _notification_handler(
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str

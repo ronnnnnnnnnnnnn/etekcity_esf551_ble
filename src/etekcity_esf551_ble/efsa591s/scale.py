@@ -13,7 +13,7 @@ from ..const import (
     WEIGHT_KEY,
 )
 
-from ..scale import GattScale
+from ..scale import GattScale, ScaleSessionError
 from ..data import ScaleData, WeightUnit
 from . import protocol as a5
 
@@ -53,51 +53,49 @@ class EFSA591SScale(GattScale):
         return self._seq
 
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
-        try:
-            self._logger.debug(
-                "EFS-A591S session for %s (%s)", ble_device.name, ble_device.address
-            )
-            if ":" not in self.address:
-                self._logger.error(
-                    "EFS-A591S needs the device MAC for key derivation; got '%s'. "
-                    "This platform does not expose a MAC (e.g. macOS).",
-                    self.address,
-                )
-                return
-
-            notify_char = self._client.services.get_characteristic(
-                WEIGHT_CHARACTERISTIC_UUID_NOTIFY
-            )
-            self._write_char = self._client.services.get_characteristic(
-                ALIRO_CHARACTERISTIC_UUID
-            )
-            if not notify_char or not self._write_char:
-                self._logger.error("EFS-A591S required characteristics not found")
-                return
-
-            # Reset per-session crypto state
-            self._reasm = a5.FrameReassembler()
-            self._key = None
-            self._iv = None
-
-            await self._client.start_notify(
-                notify_char,
-                lambda char, data: self._notification_handler(
-                    char, data, ble_device.name, ble_device.address
-                ),
+        self._logger.debug(
+            "EFS-A591S session for %s (%s)", ble_device.name, ble_device.address
+        )
+        # Cleared up front so a failed session never leaves a characteristic
+        # from a previous (now disconnected) client behind.
+        self._write_char = None
+        if ":" not in self.address:
+            raise ScaleSessionError(
+                f"EFS-A591S needs the device MAC for key derivation; got "
+                f"'{self.address}'. This platform does not expose a MAC "
+                f"(e.g. macOS)."
             )
 
-            # Kick off the DH key exchange
-            self._dh = a5.generate_dh()
-            frame = a5.build_key_exchange(self._next_seq(), self.address, self._dh)
-            self._logger.debug("EFS-A591S sending key exchange: %s", frame.hex())
-            await self._send_frame(frame)
+        notify_char = self._client.services.get_characteristic(
+            WEIGHT_CHARACTERISTIC_UUID_NOTIFY
+        )
+        write_char = self._client.services.get_characteristic(
+            ALIRO_CHARACTERISTIC_UUID
+        )
+        if not notify_char or not write_char:
+            # Service discovery can transiently come back incomplete; raising
+            # lets the base disconnect and retry on the next advertisement
+            # instead of parking a dead client.
+            raise ScaleSessionError("EFS-A591S required characteristics not found")
+        self._write_char = write_char
 
-        except Exception as ex:
-            self._logger.exception(
-                "EFS-A591S session setup failed: %s(%s)", type(ex), ex.args
-            )
-            self._client = None
+        # Reset per-session crypto state
+        self._reasm = a5.FrameReassembler()
+        self._key = None
+        self._iv = None
+
+        await self._client.start_notify(
+            notify_char,
+            lambda char, data: self._notification_handler(
+                char, data, ble_device.name, ble_device.address
+            ),
+        )
+
+        # Kick off the DH key exchange
+        self._dh = a5.generate_dh()
+        frame = a5.build_key_exchange(self._next_seq(), self.address, self._dh)
+        self._logger.debug("EFS-A591S sending key exchange: %s", frame.hex())
+        await self._send_frame(frame)
 
     async def _send_frame(self, frame: bytes) -> None:
         if self._client and self._write_char:

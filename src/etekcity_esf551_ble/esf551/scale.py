@@ -3,7 +3,7 @@
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 
-from ..scale import GattScale
+from ..scale import GattScale, ScaleSessionError
 from ..data import ScaleData, WeightUnit
 from ..const import (
     ALIRO_CHARACTERISTIC_UUID,
@@ -28,35 +28,31 @@ class ESF551Scale(GattScale):
 
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
         """Handle post-connection setup and start notifications."""
-        try:
-            self._logger.debug(
-                "ESF-551 preparing session for device %s (%s)",
-                ble_device.name,
-                ble_device.address,
-            )
-            # Perform model-specific setup (read versions, handle unit changes, etc.)
-            await self._setup_after_connection()
+        self._logger.debug(
+            "ESF-551 preparing session for device %s (%s)",
+            ble_device.name,
+            ble_device.address,
+        )
+        # Perform model-specific setup (read versions, handle unit changes, etc.)
+        await self._setup_after_connection()
 
-            # Start receiving weight notifications
-            if weight_char := self._client.services.get_characteristic(
-                WEIGHT_CHARACTERISTIC_UUID_NOTIFY
-            ):
-                await self._client.start_notify(
-                    weight_char,
-                    lambda char, data: self._notification_handler(
-                        char, data, ble_device.name, ble_device.address
-                    ),
-                )
-            else:
-                self._logger.error("Weight notification characteristic not found")
-                # With Bluetooth proxies, services may not be immediately available.
-                # Don't force disconnect - let it fail naturally or timeout.
-                return
-        except Exception as ex:  # pragma: no cover – log and reset on any failure
-            self._logger.exception("%s(%s)", type(ex), ex.args)
-            self._client = None
-            # Trigger a unit update attempt on next connection
-            self._unit_update_flag = True
+        # Start receiving weight notifications
+        if weight_char := self._client.services.get_characteristic(
+            WEIGHT_CHARACTERISTIC_UUID_NOTIFY
+        ):
+            await self._client.start_notify(
+                weight_char,
+                lambda char, data: self._notification_handler(
+                    char, data, ble_device.name, ble_device.address
+                ),
+            )
+        else:
+            # Service discovery can transiently come back without the notify
+            # characteristic; raising lets the base disconnect and retry on the
+            # next advertisement instead of parking a dead client.
+            raise ScaleSessionError(
+                "ESF-551 weight notification characteristic not found"
+            )
 
     def _notification_handler(
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
