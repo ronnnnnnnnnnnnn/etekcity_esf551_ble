@@ -172,3 +172,6 @@ exploration_bin/
 btsnoop_hci.log*
 *.jsonl
 examples/
+
+# Claude Code guidance (local-only by repo convention)
+CLAUDE.md
