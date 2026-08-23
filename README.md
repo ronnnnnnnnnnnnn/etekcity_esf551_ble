@@ -2,6 +2,16 @@
 
 This package provides a basic unofficial interface for interacting with Etekcity Smart Fitness Scales using Bluetooth Low Energy (BLE). It supports the [Etekcity ESF-551](https://etekcity.com/products/smart-fitness-scale-esf551), [Etekcity ESF-24](https://us.vesync.com/product-detail/etekcity-esf24-smart-fitness-scale-335), [Etekcity FIT-8S](https://etekcity.com/products/smart-fitness-scale-fit-8s), [Etekcity ESF-17/18](https://etekcity.com/collections/fitness-scales/products/smart-fitness-scale-esf18), [Etekcity EFS-A591S (Apex HR)](https://etekcity.com/products/hr-smart-fitness-scale) and [Etekcity EFS-C651](https://etekcity.com/collections/fitness-scales/products/cobra-dark-blue) models.
 
+> **Health & safety note:** Body-composition scales measure by passing a low
+> electrical current through the body. This project does not support the
+> manufacturers' zero-current, pregnancy or baby modes, and a mode
+> enabled in the manufacturer's app is not guaranteed to be in effect while the
+> scale is used through this library. Use may be unsuitable for anyone who might be
+> pregnant or who has a pacemaker or other implanted medical device.
+> Body-composition values are bioimpedance estimates, not clinical
+> measurements, and this library is not a medical device; do not use its output
+> for medical decisions.
+
 ## Features
 
 - **ESF-551**: Fully supported and stable (weight, impedance, body metrics, display unit management)
@@ -392,3 +402,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Disclaimer
 
 This is an independent project developed by the community. It is not endorsed by, directly affiliated with, maintained, authorized or sponsored by Etekcity, VeSync or any of their affiliates or subsidiaries. All product and company names are the registered trademarks of their original owners. The use of any trade name or trademark is for identification and reference purposes only and does not imply any association with the trademark holder of their product brand.
+
+This software is provided as is, without warranty of any kind.
