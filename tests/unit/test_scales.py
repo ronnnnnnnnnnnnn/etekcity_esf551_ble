@@ -136,6 +136,33 @@ async def test_esf24_settling_frames_are_logged_once_per_session():
     assert not any("unrecognized" in m for m in messages)
 
 
+@pytest.mark.asyncio
+async def test_esf24_repeated_final_frame_is_delivered_once_per_session():
+    """The scale repeats its final frame (twice a second for 30 s in the
+    integration issue #44 log) until end-measurement lands; one weigh-in
+    must reach the callback once and schedule end-measurement once."""
+    callback = Mock()
+    scale = ESF24Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
+    scale._spawn_task = Mock(side_effect=lambda coro, name=None: coro.close())
+    # 12-byte variant final frame from that log: 89.75 kg, 549 Ω, 504 Ω.
+    final = bytearray.fromhex("100b15230f01022501f80083")
+
+    for _ in range(3):
+        scale._notification_handler("char", final, "QN-Scale", "test_address")
+
+    callback.assert_called_once()
+    assert callback.call_args[0][0].measurements == {
+        "weight": 89.75,
+        "impedance": 549,
+        "impedance_500khz": 504,
+    }
+    end_calls = [
+        c for c in scale._spawn_task.call_args_list
+        if c.kwargs.get("name") == "esf24-end-measurement"
+    ]
+    assert len(end_calls) == 1
+
+
 # --- ESF-24 stored offline measurements -------------------------------------
 #
 # All frames are real captured bytes: the scale acks our set-time command

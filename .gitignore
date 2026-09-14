@@ -165,13 +165,12 @@ src/.DS_Store
 
 test-esf551.py
 
-# --- Local-only working directories (do NOT commit) ---
 exploration_bin/
 .secrets/
-# Captures containing personal data (device MAC, weight readings)
+
 btsnoop_hci.log*
 *.jsonl
 examples/
 
-# Claude Code guidance (local-only by repo convention)
 CLAUDE.md
+.claude/

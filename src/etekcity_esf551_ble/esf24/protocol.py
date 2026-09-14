@@ -46,7 +46,7 @@ def build_measurement_initiation_command() -> bytearray:
 
 
 _MEASUREMENT_FRAME_PREFIX = b"\x10\x0b\x15"
-_MEASUREMENT_FRAME_LENGTH = 11
+_MEASUREMENT_FRAME_MIN_LENGTH = 11
 _STATUS_FINAL = 0x01
 
 
@@ -57,9 +57,15 @@ def is_measurement_frame(payload: bytearray) -> bool:
     Every frame of a weigh-in matches, not just the final one: the scale
     streams the weight while it settles and the BIA runs. Only the final
     frame carries a usable reading — see :func:`parse_weight`.
+
+    The length byte (0x0b) selects the frame flavor, so it is part of the
+    prefix; the wire length is only bounded below. The ESF-24 sends 11
+    bytes, but a firmware variant sends 12 with the same length byte and
+    field offsets (checksum last) — the vendor decoder reads this frame by
+    offset and never checks its length either.
     """
     return (
-        len(payload) == _MEASUREMENT_FRAME_LENGTH
+        len(payload) >= _MEASUREMENT_FRAME_MIN_LENGTH
         and payload[0:3] == _MEASUREMENT_FRAME_PREFIX
     )
 
@@ -98,8 +104,9 @@ def parse_weight(payload: bytearray) -> dict[str, int | float | None] | None:
 
 # --- Stored offline measurements (22 04 query / 23 14 records) --------------
 
-_STORED_MEASUREMENT_FRAME_PREFIX = b"\x23\x14\x15"
-_STORED_MEASUREMENT_FRAME_LENGTH = 20
+_STORED_MEASUREMENT_OPCODE = 0x23
+_STORED_MEASUREMENT_VENDOR_BYTE = 0x15
+_STORED_MEASUREMENT_FRAME_MIN_LENGTH = 16
 
 
 def build_stored_measurement_query() -> bytearray:
@@ -118,13 +125,16 @@ def build_stored_measurement_query() -> bytearray:
 def is_stored_measurement_frame(payload: bytearray) -> bool:
     """Return True if the payload is an ESF-24 stored-measurement record.
 
-    The ESF-24 record is 20 bytes (length byte 0x14); the otherwise
-    identical renpho QN record is 19 (0x13), so the exact-length match
-    also keeps that variant out.
+    The ESF-24 record is 20 bytes (length byte 0x14, four reserved bytes);
+    a firmware variant sends 16 (0x10, no reserved bytes). Both carry the
+    fields at the same offsets with the checksum last, so the length byte
+    is required to match the wire length rather than a fixed value.
     """
     return (
-        len(payload) == _STORED_MEASUREMENT_FRAME_LENGTH
-        and payload[0:3] == _STORED_MEASUREMENT_FRAME_PREFIX
+        len(payload) >= _STORED_MEASUREMENT_FRAME_MIN_LENGTH
+        and payload[0] == _STORED_MEASUREMENT_OPCODE
+        and payload[1] == len(payload)
+        and payload[2] == _STORED_MEASUREMENT_VENDOR_BYTE
     )
 
 
@@ -160,7 +170,7 @@ def parse_stored_measurement(payload: bytearray) -> _StoredFrame | None:
     The scale sends one record per offline reading in response to the
     query. Layout::
 
-        0..2    prefix 23 14 15
+        0..2    prefix 23 <len> 15
         3       count — total records in this batch (0 = store empty)
         4       index — 1-based position of this record in the batch
         5..8    timestamp, little-endian uint32, seconds since
@@ -168,8 +178,8 @@ def parse_stored_measurement(payload: bytearray) -> _StoredFrame | None:
         9..10   weight, big-endian uint16, 0.01 kg
         11..12  resistance 1 (50 kHz)
         13..14  resistance 2 (500 kHz)
-        15..18  reserved (0x00)
-        19      checksum, mod-256 sum of bytes 0..18
+        15..    reserved (0x00; absent on the 16-byte variant)
+        last    checksum, mod-256 sum of all preceding bytes
 
     ``timestamp`` is returned as unix seconds. When ``count == 0`` the
     store is empty and the remaining fields are meaningless — callers

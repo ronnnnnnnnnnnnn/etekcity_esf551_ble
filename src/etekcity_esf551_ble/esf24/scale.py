@@ -31,6 +31,10 @@ _STATE_MEASUREMENT_INIT = 2
 _STATE_SETTLING_LOGGED = 4
 # Set once the stored-measurement query has been sent this session.
 _STATE_STORED_QUERY = 8
+# Set once a final frame has been delivered this session. The scale repeats
+# the final frame (about twice a second) until our end-measurement command
+# lands, and one weigh-in must reach the callback exactly once.
+_STATE_FINAL_DELIVERED = 16
 
 # Ack of our set-time (0x20) command, capture-verified: 21 05 15 01 3c.
 _SET_TIME_ACK_FRAME_PREFIX = b"\x21\x05\x15"
@@ -129,6 +133,15 @@ class ESF24Scale(GattScale):
         # the branches below only announce the ones they act on.
         self._logger.debug("ESF-24 RX payload: %s", payload.hex())
         if data := parse_weight(payload):
+            if self._state_mask & _STATE_FINAL_DELIVERED:
+                self._logger.debug(
+                    "ESF-24 repeated final frame from %s; already delivered, "
+                    "ignoring: %s",
+                    address,
+                    payload.hex(),
+                )
+                return
+            self._state_mask |= _STATE_FINAL_DELIVERED
             self._logger.debug(
                 "ESF-24 stable weight received (%s). Scheduling measurement end command.",
                 address,

@@ -227,3 +227,64 @@ def test_parse_weight_rejects_other_qn_frame_variants():
     assert parse_weight(es30m_like) is None
     assert parse_weight(bytearray.fromhex("120b152b4801016b013445")) is None
     assert parse_weight(bytearray.fromhex("100b16")) is None
+
+
+# --- Short-frame firmware variant (integration issue #44) -------------------
+#
+# A "QN-Scale" unit (OUI D8:0B:CB) configured as an ESF-24 emits the same
+# opcodes with shorter frames: 0x10 measurement frames are 12 bytes (length
+# byte still 0x0b, checksum last) and 0x23 stored records are 16 bytes
+# (length byte 0x10, no reserved bytes). Field offsets are unchanged — the
+# final frame below decodes to the 200.2 lb the reporter read off the display.
+
+
+def test_is_measurement_frame_accepts_12_byte_variant():
+    assert is_measurement_frame(bytearray.fromhex("100b152378010000000000cc"))
+    assert is_measurement_frame(bytearray.fromhex("100b15221000000000000062"))
+
+
+def test_parse_weight_12_byte_variant_final_frame():
+    data = parse_weight(bytearray.fromhex("100b152378010000000000cc"))
+    assert data == {"weight": 90.80}
+
+
+def test_parse_weight_12_byte_variant_final_frame_with_impedance():
+    # From the integration issue #44 debug log: the resistances sit at the
+    # same offsets as the 11-byte frame (r1 at 6..7, r2 at 8..9); the extra
+    # byte is the zero at index 10, ahead of the checksum.
+    data = parse_weight(bytearray.fromhex("100b15230f01022501f80083"))
+    assert data == {"weight": 89.75, "impedance": 549, "impedance_500khz": 504}
+
+
+def test_parse_weight_12_byte_variant_rejects_settling_frames():
+    assert parse_weight(bytearray.fromhex("100b15221000000000000062")) is None
+    assert parse_weight(bytearray.fromhex("100b1522fb0000000000004d")) is None
+
+
+@pytest.mark.parametrize(
+    "hx,count,index,ts_raw,weight,r1,r2",
+    [
+        ("2310150a0613ee0c3221e3000000009b", 10, 6, 0x320CEE13, 86.75, 0, 0),
+        ("2310150a07e5a4243221d4000000002d", 10, 7, 0x3224A4E5, 86.60, 0, 0),
+        ("231015020112213932238c023c0216ee", 2, 1, 0x32392112, 91.00, 572, 534),
+        ("2310150202a2213932238c023a0242a9", 2, 2, 0x323921A2, 91.00, 570, 578),
+    ],
+)
+def test_parse_stored_measurement_decodes_16_byte_variant(
+    hx, count, index, ts_raw, weight, r1, r2
+):
+    payload = bytearray.fromhex(hx)
+    assert is_stored_measurement_frame(payload)
+    frame = parse_stored_measurement(payload)
+    assert frame.count == count
+    assert frame.index == index
+    assert frame.timestamp == ts_raw + _EPOCH_OFFSET
+    assert frame.weight_kg == weight
+    assert frame.resistance_1 == r1
+    assert frame.resistance_2 == r2
+
+
+def test_parse_stored_measurement_16_byte_variant_rejects_bad_checksum():
+    bad = bytearray.fromhex("231015020112213932238c023c0216ee")
+    bad[9] ^= 0x01
+    assert parse_stored_measurement(bad) is None
