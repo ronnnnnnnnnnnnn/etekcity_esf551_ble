@@ -1,4 +1,4 @@
-__version__ = "0.8.6"
+__version__ = "0.8.7"
 
 
 def _parse_version_info(version_str: str) -> tuple[int, ...]:
