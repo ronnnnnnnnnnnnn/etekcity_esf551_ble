@@ -116,6 +116,24 @@ def is_etekcity_frame(payload: bytes, address: str | None = None) -> bool:
     return True
 
 
+def is_qn_frame(payload: bytes, address: str | None = None) -> bool:
+    """Return True if ``payload`` is a QN-platform frame from ``address``.
+
+    Company ID 65535 is a catch-all used by many unrelated vendors, and the
+    QN frame has no header structure of its own, so the device MAC echoed
+    little-endian at bytes 5-10 is the only signal that the frame is a
+    QN-platform device's. Without a real (colon-separated) address there is
+    nothing to validate against and the answer is False. Like
+    :func:`is_etekcity_frame`, this answers "is this a QN-platform device?",
+    NOT "is this a scale?" — use it to surface devices whose model
+    identifier is not in the registry yet.
+    """
+    if len(payload) < _QN_MAC_SLICE.stop or not address:
+        return False
+    expected = _reversed_mac(address)
+    return expected is not None and payload[_QN_MAC_SLICE] == expected
+
+
 def _parse_qn_model_code(payload: bytes, address: str | None) -> int | None:
     """Return the model identifier from a QN payload.
 
@@ -252,7 +270,7 @@ def detect_model(
         qn_code = _parse_qn_model_code(payload, address)
         if qn_code is not None and qn_code in QN_MODEL_CODES:
             return QN_MODEL_CODES[qn_code]
-        if qn_code is not None and address and _reversed_mac(address) is not None:
+        if qn_code is not None and is_qn_frame(payload, address):
             _report_unregistered(
                 etekcity_code,
                 qn_code,

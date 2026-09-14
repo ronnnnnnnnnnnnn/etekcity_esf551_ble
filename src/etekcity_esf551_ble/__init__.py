@@ -20,6 +20,7 @@ from .detection import (
     ScaleModel,
     detect_model,
     is_etekcity_frame,
+    is_qn_frame,
     parse_model_code,
 )
 from .efsa591s import EFSA591SScale
@@ -79,5 +80,6 @@ __all__ = [
     "ScaleModel",
     "detect_model",
     "is_etekcity_frame",
+    "is_qn_frame",
     "parse_model_code",
 ]

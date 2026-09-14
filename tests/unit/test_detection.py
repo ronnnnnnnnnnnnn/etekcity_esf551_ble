@@ -11,6 +11,7 @@ from src.etekcity_esf551_ble.detection import (
     CAPABILITIES,
     ETEKCITY_MANUFACTURER_ID,
     QN_MANUFACTURER_ID,
+    is_qn_frame,
     ScaleModel,
     detect_model,
     is_etekcity_frame,
@@ -508,3 +509,15 @@ def test_unregistered_qn_code_without_mac_echo_is_not_reported(caplog):
     with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
         assert detect_model(None, {QN: RENPHO_QN_PAYLOAD}) is None
     assert "unrecognized model identifier" not in caplog.text
+
+
+def test_is_qn_frame_requires_validated_mac_echo():
+    # Company ID 65535 is a catch-all, so the MAC echo at bytes 5-10 is the
+    # only structural signal: without a matching address the frame is not
+    # trusted, however plausible it looks.
+    assert is_qn_frame(ESF24_REV2_PAYLOAD, "D8:0B:CB:1E:30:51")
+    assert is_qn_frame(RENPHO_QN_PAYLOAD, "FF:03:00:67:AA:03")
+    assert not is_qn_frame(ESF24_REV2_PAYLOAD, "AA:BB:CC:DD:EE:FF")
+    assert not is_qn_frame(ESF24_REV2_PAYLOAD, None)
+    assert not is_qn_frame(ESF24_REV2_PAYLOAD, "1A2B3C4D-0000-0000-0000-000000000000")
+    assert not is_qn_frame(ESF24_REV2_PAYLOAD[:8], "D8:0B:CB:1E:30:51")
