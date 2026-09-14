@@ -252,6 +252,12 @@ def detect_model(
         qn_code = _parse_qn_model_code(payload, address)
         if qn_code is not None and qn_code in QN_MODEL_CODES:
             return QN_MODEL_CODES[qn_code]
+        if qn_code is not None and address and _reversed_mac(address) is not None:
+            _report_unregistered(
+                etekcity_code,
+                qn_code,
+                "Found a QN-platform scale (MAC echo valid) not in the registry",
+            )
 
     for model, required_mfr_id, pattern in FALLBACK_MATCHERS:
         if required_mfr_id is not None and required_mfr_id not in manufacturer_data:

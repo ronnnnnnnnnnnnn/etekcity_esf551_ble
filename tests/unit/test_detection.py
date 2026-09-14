@@ -471,3 +471,40 @@ def test_unrecognized_qn_identifier_logged(caplog):
         )
         detect_model(None, {QN: payload}, address="04:AC:44:0B:B3:65")
     assert caplog.text.count("unrecognized model identifier 550") == 1
+
+
+# --- QN platform: second ESF-24 hardware revision (integration issue #44) ---
+
+# Real advertisement from HA's advertisement monitor: name "QN-Scale" (no
+# "1"), OUI D8:0B:CB, and byte 2 of the QN frame 0x00 where the first
+# revision sends 0x01. Only the model code and the MAC echo identify it.
+ESF24_REV2_PAYLOAD = bytes.fromhex("012600000151301ecb0bd8")
+
+
+def test_detect_esf24_second_revision_real_advertisement():
+    assert (
+        detect_model("QN-Scale", {QN: ESF24_REV2_PAYLOAD}, address="D8:0B:CB:1E:30:51")
+        == ScaleModel.ESF24
+    )
+
+
+def test_unregistered_qn_code_with_valid_mac_echo_is_reported(caplog):
+    # A QN frame whose MAC echo validates is a QN-platform scale for sure;
+    # if its code is unregistered it may be a new ESF-24 revision, so the
+    # identifier must be logged even though nothing classifies it.
+    detection_module._reported_identifiers.clear()
+    with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
+        assert (
+            detect_model("QN-Scale", {QN: RENPHO_QN_PAYLOAD}, address="FF:03:00:67:AA:03")
+            is None
+        )
+    assert "unrecognized model identifier 2537 (company ID 65535)" in caplog.text
+
+
+def test_unregistered_qn_code_without_mac_echo_is_not_reported(caplog):
+    # 65535 is a catch-all company ID: without a validated MAC echo the
+    # frame could be anything, so it must not be reported as a scale.
+    detection_module._reported_identifiers.clear()
+    with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
+        assert detect_model(None, {QN: RENPHO_QN_PAYLOAD}) is None
+    assert "unrecognized model identifier" not in caplog.text
