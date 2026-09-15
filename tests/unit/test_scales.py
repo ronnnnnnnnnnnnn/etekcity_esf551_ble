@@ -77,6 +77,75 @@ async def test_esf551_scale_notification_handler():
     assert call_args.display_unit == WeightUnit.KG
 
 
+# Captured final frame: 84.05 kg, 532 Ω, unit kg. The scale sent it twice,
+# ~40 ms apart, on a single weigh-in.
+_ESF551_FINAL = bytearray.fromhex("a502001000000161a100524801140200000000010100")
+
+
+@pytest.mark.asyncio
+async def test_esf551_repeated_final_frame_is_delivered_once():
+    """The scale repeats its final frame within a few tens of ms; one
+    weigh-in must reach the callback exactly once."""
+    callback = Mock()
+    scale = ESF551Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
+
+    for _ in range(3):
+        scale._notification_handler("char", _ESF551_FINAL, "ESF-551", "test_address")
+
+    callback.assert_called_once()
+    assert callback.call_args[0][0].measurements == {"weight": 84.05, "impedance": 532}
+
+
+@pytest.mark.asyncio
+async def test_esf551_identical_frame_after_the_window_is_a_new_weigh_in():
+    """A session outlives the weigh-in by tens of seconds, so stepping back
+    on and landing on the same weight must still be delivered."""
+    callback = Mock()
+    scale = ESF551Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
+
+    scale._notification_handler("char", _ESF551_FINAL, "ESF-551", "test_address")
+    scale._last_delivered_time -= 30
+    scale._notification_handler("char", _ESF551_FINAL, "ESF-551", "test_address")
+
+    assert callback.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_esf551_different_frame_within_the_window_is_delivered():
+    """Only an identical repeat is suppressed: a different reading that
+    arrives inside the window is a real measurement."""
+    callback = Mock()
+    scale = ESF551Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
+    other = bytearray(_ESF551_FINAL)
+    other[10] = (other[10] + 1) % 256
+
+    scale._notification_handler("char", _ESF551_FINAL, "ESF-551", "test_address")
+    scale._notification_handler("char", other, "ESF-551", "test_address")
+
+    assert callback.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_esf551_session_start_clears_the_repeat_guard():
+    """A reconnect is a fresh weigh-in even at an identical weight."""
+    callback = Mock()
+    scale = ESF551Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
+    scale._client = AsyncMock()
+    scale._client.services.get_characteristic = Mock(return_value=Mock())
+    scale._client.read_gatt_char = AsyncMock(return_value=b"R0010V1001")
+
+    scale._notification_handler("char", _ESF551_FINAL, "ESF-551", "test_address")
+
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = "00:11:22:33:44:55"
+    ble_device.name = "ESF-551"
+    await scale._start_scale_session(ble_device)
+    assert scale._last_delivered_frame is None
+
+    scale._notification_handler("char", _ESF551_FINAL, "ESF-551", "test_address")
+    assert callback.call_count == 2
+
+
 @pytest.mark.asyncio
 async def test_esf551_scale_set_display_unit():
     """Test ESF-551 display unit setting."""

@@ -1,5 +1,7 @@
 """ESF-551 scale implementation."""
 
+import time
+
 from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.backends.device import BLEDevice
 
@@ -14,11 +16,20 @@ from ..const import (
 )
 from .protocol import parse, build_unit_update_payload
 
+# The scale emits its final stable frame more than once — twice, ~40 ms apart,
+# in the capture this was written from — and the GATT session outlives the
+# weigh-in by tens of seconds, so a repeat cannot be told from a re-weigh by
+# position in the session alone. A frame identical to the last delivered one
+# within this window is the repeat; anything later is someone stepping back on.
+_REPEAT_FRAME_WINDOW_SECONDS = 2.0
+
 
 class ESF551Scale(GattScale):
     """ESF-551 scale implementation with full feature support."""
 
     _unit_update_flag: bool = False
+    _last_delivered_frame: bytes | None = None
+    _last_delivered_time: float = 0.0
 
     @GattScale.display_unit.setter
     def display_unit(self, value):
@@ -33,6 +44,7 @@ class ESF551Scale(GattScale):
             ble_device.name,
             ble_device.address,
         )
+        self._last_delivered_frame = None
         # Perform model-specific setup (read versions, handle unit changes, etc.)
         await self._setup_after_connection()
 
@@ -58,6 +70,22 @@ class ESF551Scale(GattScale):
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
     ) -> None:
         if parsed_data := parse(payload):
+            now = time.monotonic()
+            frame = bytes(payload)
+            if (
+                self._last_delivered_frame == frame
+                and now - self._last_delivered_time < _REPEAT_FRAME_WINDOW_SECONDS
+            ):
+                self._logger.debug(
+                    "ESF-551 repeated final frame from %s; already delivered, "
+                    "ignoring: %s",
+                    address,
+                    frame.hex(),
+                )
+                return
+            self._last_delivered_frame = frame
+            self._last_delivered_time = now
+
             self._logger.debug(
                 "Received stable weight notification from %s (%s): %s",
                 name,
