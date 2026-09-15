@@ -521,3 +521,24 @@ def test_is_qn_frame_requires_validated_mac_echo():
     assert not is_qn_frame(ESF24_REV2_PAYLOAD, None)
     assert not is_qn_frame(ESF24_REV2_PAYLOAD, "1A2B3C4D-0000-0000-0000-000000000000")
     assert not is_qn_frame(ESF24_REV2_PAYLOAD[:8], "D8:0B:CB:1E:30:51")
+
+
+
+ESF551_JP_PAYLOAD = bytes.fromhex("01ccbbaa004dd0000c")
+
+
+def test_detect_esf551_jp_by_model_code(caplog):
+    detection_module._reported_identifiers.clear()
+    with caplog.at_level(logging.INFO, logger="src.etekcity_esf551_ble.detection"):
+        assert (
+            detect_model("Etekcity Smart Fitness Scale", {MFR: ESF551_JP_PAYLOAD})
+            == ScaleModel.ESF551JP
+        )
+    assert "unrecognized model identifier" not in caplog.text
+
+
+def test_esf551_jp_capabilities_unit_observed_only():
+    caps = CAPABILITIES[ScaleModel.ESF551JP]
+    assert caps.has_impedance is True
+    assert caps.has_heart_rate is False
+    assert caps.display_unit_settable is False

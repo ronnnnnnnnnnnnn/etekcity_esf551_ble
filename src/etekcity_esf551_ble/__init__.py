@@ -26,7 +26,7 @@ from .detection import (
 from .efsa591s import EFSA591SScale
 from .efsc651 import EFSC651Scale
 from .esf24 import ESF24Scale
-from .esf551 import ESF551Scale
+from .esf551 import ESF551JPScale, ESF551Scale
 from .fit8s import FIT8SScale
 from .scale import (
     AdvertisementScale,
@@ -39,6 +39,7 @@ from .scale import (
 # imports), so this map lives here where the classes are already imported.
 SCALE_CLASSES: dict[ScaleModel, type[EtekcitySmartFitnessScale]] = {
     ScaleModel.ESF551: ESF551Scale,
+    ScaleModel.ESF551JP: ESF551JPScale,
     ScaleModel.ESF24: ESF24Scale,
     ScaleModel.FIT8S: FIT8SScale,
     ScaleModel.EFSA591S: EFSA591SScale,
@@ -53,6 +54,7 @@ __all__ = [
     "EtekcitySmartFitnessScale",
     "GattScale",
     "AdvertisementScale",
+    "ESF551JPScale",
     "ESF551Scale",
     "ESF24Scale",
     "FIT8SScale",

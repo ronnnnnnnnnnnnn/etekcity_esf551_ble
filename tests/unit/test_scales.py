@@ -10,9 +10,12 @@ from src.etekcity_esf551_ble import (
     EFSC651Scale,
     EFSA591SScale,
     ESF24Scale,
+    ESF551JPScale,
     ESF551Scale,
     EtekcitySmartFitnessScale,
     FIT8SScale,
+    SCALE_CLASSES,
+    ScaleModel,
     WeightUnit,
 )
 from src.etekcity_esf551_ble.efsa591s import protocol as a5
@@ -668,3 +671,67 @@ async def test_advertisement_callback_cooldown():
         mock_time.return_value = 111
         await scale._advertisement_callback(ble_device, Mock())
         mock_establish_connection.assert_called_once()
+
+
+_ESF551_FINAL_KG = bytearray.fromhex("a502cd1000490161a1000c1b0100003f2d3267010100")
+
+
+def _esf551jp(callback, display_unit=None):
+    return ESF551JPScale(
+        "D0:4D:00:AA:BB:CC", callback, display_unit, bleak_scanner_backend=Mock()
+    )
+
+
+@pytest.mark.asyncio
+async def test_esf551jp_is_registered_for_its_model():
+    assert SCALE_CLASSES[ScaleModel.ESF551JP] is ESF551JPScale
+    assert issubclass(ESF551JPScale, ESF551Scale)
+
+
+@pytest.mark.asyncio
+async def test_esf551jp_ignores_requested_display_unit():
+    """The Japan-market ESF-551 is kg-only; a requested unit must never arm
+    the unit-change write."""
+    scale = _esf551jp(Mock(), WeightUnit.LB)
+    assert scale._display_unit is None
+    assert scale._unit_update_flag is False
+
+    scale.display_unit = WeightUnit.ST
+    assert scale._display_unit is None
+    assert scale._unit_update_flag is False
+
+
+@pytest.mark.asyncio
+async def test_esf551jp_session_never_writes_unit_command():
+    """Issue #15: the unit-change write drops the GATT link on this variant,
+    so a session must subscribe without ever writing to the scale."""
+    scale = _esf551jp(Mock(), WeightUnit.LB)
+    scale._client = AsyncMock()
+    scale._client.services.get_characteristic = Mock(return_value=Mock())
+    scale._client.read_gatt_char = AsyncMock(return_value=b"R0010V1001")
+    # Belt and braces: even a directly armed flag must not reach the wire.
+    scale._unit_update_flag = True
+    scale._display_unit = WeightUnit.LB
+
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = "D0:4D:00:AA:BB:CC"
+    ble_device.name = "Etekcity Smart Fitness Scale"
+    await scale._start_scale_session(ble_device)
+
+    scale._client.write_gatt_char.assert_not_awaited()
+    scale._client.start_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_esf551jp_adopts_observed_unit_from_frame():
+    callback = Mock()
+    scale = _esf551jp(callback, WeightUnit.LB)
+
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "test_address")
+
+    callback.assert_called_once()
+    data = callback.call_args[0][0]
+    assert data.display_unit == WeightUnit.KG
+    assert data.measurements == {"weight": 72.46}
+    assert scale.display_unit == WeightUnit.KG
+    assert scale._unit_update_flag is False

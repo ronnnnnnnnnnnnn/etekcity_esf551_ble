@@ -58,6 +58,7 @@ class ScaleModel(StrEnum):
     """
 
     ESF551 = "ESF-551"
+    ESF551JP = "ESF-551 (Japan)"
     ESF24 = "ESF-24"
     FIT8S = "FIT-8S"
     EFSA591S = "EFS-A591S"
@@ -155,6 +156,7 @@ def _parse_qn_model_code(payload: bytes, address: str | None) -> int | None:
 MODEL_CODES: dict[int, ScaleModel] = {
     1: ScaleModel.ESF551,
     2: ScaleModel.ESF551,
+    12: ScaleModel.ESF551JP,
     3: ScaleModel.EFSA591S,
     5: ScaleModel.EFSA591S,
     127: ScaleModel.EFSA591S,
@@ -338,6 +340,9 @@ class ScaleCapabilities:
 CAPABILITIES: dict[ScaleModel, ScaleCapabilities] = {
     ScaleModel.ESF551: ScaleCapabilities(
         has_impedance=True, has_heart_rate=False, display_unit_settable=True
+    ),
+    ScaleModel.ESF551JP: ScaleCapabilities(
+        has_impedance=True, has_heart_rate=False, display_unit_settable=False
     ),
     ScaleModel.ESF24: ScaleCapabilities(
         has_impedance=True, has_heart_rate=False, display_unit_settable=True

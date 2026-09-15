@@ -138,3 +138,28 @@ class ESF551Scale(GattScale):
                     )
             except Exception as ex:
                 self._logger.error("ESF-551 failed to request unit change: %s", ex)
+
+
+class ESF551JPScale(ESF551Scale):
+    """Japan-market ESF-551 (model identifier 12).
+
+    Same frames and GATT layout as the ESF-551, but the scale is kg-only and
+    the unit-change command is not implemented: writing it drops the GATT
+    link (issue #15). The display unit is observed from the frames, never
+    commanded.
+    """
+
+    @ESF551Scale.display_unit.setter
+    def display_unit(self, value):
+        if value is not None:
+            self._logger.debug(
+                "Ignoring display_unit=%s; %s is kg-only and cannot set the "
+                "unit on the scale",
+                value,
+                type(self).__name__,
+            )
+
+    async def _setup_after_connection(self) -> None:
+        # Never send the unit-change command, whatever state the flag is in.
+        self._unit_update_flag = False
+        await super()._setup_after_connection()

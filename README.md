@@ -15,6 +15,7 @@ This package provides a basic unofficial interface for interacting with Etekcity
 ## Features
 
 - **ESF-551**: Fully supported and stable (weight, impedance, body metrics, display unit management)
+- **ESF-551 (Japan market, model identifier 12)**: Same protocol, but the scale is kg-only and the display unit is not settable
 - **ESF-24**: Experimental support (weight, impedance, body metrics, unit changes)
 - **ESF-17/18**: Experimental support (weight, impedance, body metrics, unit changes) — protocol-identical to the ESF-24 and handled by the same client class
 - **FIT-8S**: Experimental support (weight, impedance, body metrics)
@@ -22,13 +23,13 @@ This package provides a basic unofficial interface for interacting with Etekcity
 - **EFS-C651**: Experimental support (weight, impedance, body metrics, unit changes)
 - Easy connection and notification handling
 - Body composition metrics for any impedance-capable scale, with optional athlete mode. Two calculators are provided, matching the two algorithms the app uses: `BodyMetrics` for the ESF-551, ESF-24, ESF-17, ESF-18, FIT-8S and EFS-A591S, and `BodyMetricsV2` for the EFS-C651. They share a common set of metrics, so they can be used interchangeably — see [Body metrics](#body-metrics)
-- Display unit management (not supported on advertisement-based scales like FIT-8S)
+- Display unit management (not supported on advertisement-based scales like FIT-8S, nor on the kg-only Japan-market ESF-551)
 
 ## Supported Models
 
 | Model | Status | Features |
 |-------|--------|----------|
-| ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes |
+| ESF-551 | ✅ Fully Supported | Weight, impedance, body metrics, unit changes (except Japan model) |
 | EFS-A591S | 🔬 Experimental | Weight, impedance, heart rate, body metrics, unit changes |
 | ESF-24 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
 | ESF-17 | 🔬 Experimental | Weight, impedance, body metrics, unit changes |
@@ -192,6 +193,7 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 | Model | Company | Codes |
 |---|---|---|
 | ESF-551 | 1744 | 1 (0x0001), 2 (0x0002) |
+| ESF-551 (Japan model) | 1744 | 12 (0x000C) |
 | EFS-A591S | 1744 | 3 (0x0003), 5 (0x0005), 127 (0x007F), 134 (0x0086) |
 | EFS-C651 | 1744 | 136 (0x0088) |
 | FIT-8S | 1744 | 49321 (0xC0A9) |
