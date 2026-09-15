@@ -36,3 +36,27 @@ def test_parse():
     )
     result = esf551_parse(invalid_length)
     assert result is None
+
+
+_LIVE_FRAME = bytearray.fromhex("a502cc10004d0161a1000c1b0100003d2d3267000100")
+_FINAL_FRAME = bytearray.fromhex("a502cd1000490161a1000c1b0100003f2d3267010100")
+
+
+def test_is_esf551_frame_accepts_live_and_final_frames():
+    from src.etekcity_esf551_ble.esf551.protocol import is_esf551_frame
+
+    assert is_esf551_frame(_LIVE_FRAME) is True
+    assert is_esf551_frame(_FINAL_FRAME) is True
+
+
+def test_is_esf551_frame_rejects_foreign_or_short_payloads():
+    from src.etekcity_esf551_ble.esf551.protocol import is_esf551_frame
+
+    assert is_esf551_frame(bytearray(22)) is False
+    assert is_esf551_frame(_FINAL_FRAME[:21]) is False
+    assert is_esf551_frame(None) is False
+
+
+def test_parse_returns_none_for_live_frame():
+    assert esf551_parse(_LIVE_FRAME) is None
+    assert esf551_parse(_FINAL_FRAME) == {"display_unit": 0, "weight": 72.46}

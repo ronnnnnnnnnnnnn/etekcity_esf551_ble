@@ -5,6 +5,23 @@ from ..const import DISPLAY_UNIT_KEY, IMPEDANCE_KEY, WEIGHT_KEY
 UNIT_UPDATE_COMMAND = bytearray.fromhex("a522030500000163a10000")
 
 
+def is_esf551_frame(payload: bytearray | None) -> bool:
+    """
+    Return True if ``payload`` is an ESF-551 weight notification frame.
+
+    Accepts both live (settling) frames and the final stable frame; only the
+    latter carries a reading that :func:`parse` returns. Bytes 2 and 5 are a
+    per-frame sequence number and checksum and are not validated.
+    """
+    return (
+        payload is not None
+        and len(payload) == 22
+        and payload[0:2] == b"\xa5\x02"
+        and payload[3:5] == b"\x10\x00"
+        and payload[6:10] == b"\x01\x61\xa1\x00"
+    )
+
+
 def parse(payload: bytearray) -> dict[str, int | float | None]:
     """
     Parse raw data received from the ESF-551 scale.
@@ -20,14 +37,7 @@ def parse(payload: bytearray) -> dict[str, int | float | None]:
 
     Returns None if the payload format is invalid or unrecognized.
     """
-    if (
-        payload is not None
-        and len(payload) == 22
-        and payload[19] == 1
-        and payload[0:2] == b"\xa5\x02"
-        and payload[3:5] == b"\x10\x00"
-        and payload[6:10] == b"\x01\x61\xa1\x00"
-    ):
+    if is_esf551_frame(payload) and payload[19] == 1:
         data = dict[str, int | float | None]()
         weight = struct.unpack("<I", payload[10:13].ljust(4, b"\x00"))[0]
         impedance = struct.unpack("<H", payload[13:15])[0]

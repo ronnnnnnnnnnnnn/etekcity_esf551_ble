@@ -735,3 +735,100 @@ async def test_esf551jp_adopts_observed_unit_from_frame():
     assert data.measurements == {"weight": 72.46}
     assert scale.display_unit == WeightUnit.KG
     assert scale._unit_update_flag is False
+
+
+_ESF551_LIVE_KG = bytearray.fromhex("a502cc10004d0161a1000c1b0100003d2d3267000100")
+
+
+def _esf551(callback):
+    return ESF551Scale("00:11:22:33:44:55", callback, bleak_scanner_backend=Mock())
+
+
+def _resent(frame: bytearray) -> bytearray:
+    """The same reading re-sent by the scale: next sequence byte, checksum
+    recomputed (one's complement of the sum of the other bytes)."""
+    copy = bytearray(frame)
+    copy[2] = (copy[2] + 1) & 0xFF
+    copy[5] = 0
+    copy[5] = (~sum(copy)) & 0xFF
+    return copy
+
+
+@pytest.mark.asyncio
+async def test_esf551_repeated_final_is_delivered_once():
+    """The scale re-sends its final frame tens of ms later. The
+    repeat carries a new sequence byte and checksum, so the match must be
+    on the reading, not the bytes."""
+    callback = Mock()
+    scale = _esf551(callback)
+
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+    scale._notification_handler("char", _resent(_ESF551_FINAL_KG), "ESF-551", "addr")
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+
+    callback.assert_called_once()
+    assert callback.call_args[0][0].measurements == {"weight": 72.46}
+
+
+@pytest.mark.asyncio
+async def test_esf551_live_frame_resets_repeat_guard():
+    """A settling frame means a new weigh-in is under way, so an identical
+    final after it is a real second reading."""
+    callback = Mock()
+    scale = _esf551(callback)
+
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+    scale._notification_handler("char", _ESF551_LIVE_KG, "ESF-551", "addr")
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+
+    assert callback.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_esf551_differing_final_is_delivered():
+    callback = Mock()
+    scale = _esf551(callback)
+    other = bytearray(_ESF551_FINAL_KG)
+    other[10] = 0x16  # weight 0x011b16 = 72470 → 72.47 kg
+
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+    scale._notification_handler("char", other, "ESF-551", "addr")
+
+    assert callback.call_count == 2
+    assert callback.call_args_list[1][0][0].measurements == {"weight": 72.47}
+
+
+@pytest.mark.asyncio
+async def test_esf551_session_start_resets_repeat_guard():
+    callback = Mock()
+    scale = _esf551(callback)
+    scale._client = AsyncMock()
+    scale._client.services.get_characteristic = Mock(return_value=Mock())
+    scale._client.read_gatt_char = AsyncMock(return_value=b"R0010V1001")
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = "00:11:22:33:44:55"
+    ble_device.name = "ESF-551"
+
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+    await scale._start_scale_session(ble_device)
+    scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+
+    assert callback.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_esf551_logs_every_raw_payload(caplog):
+    """Debug logs must carry the raw frame so a weigh-in (and any repeat)
+    can be reconstructed from a Home Assistant log alone."""
+    import logging
+
+    logger = logging.getLogger("test.esf551.raw")
+    scale = ESF551Scale(
+        "00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock(), logger=logger
+    )
+    with caplog.at_level(logging.DEBUG, logger="test.esf551.raw"):
+        scale._notification_handler("char", _ESF551_LIVE_KG, "ESF-551", "addr")
+        scale._notification_handler("char", _ESF551_FINAL_KG, "ESF-551", "addr")
+
+    assert _ESF551_LIVE_KG.hex() in caplog.text
+    assert _ESF551_FINAL_KG.hex() in caplog.text

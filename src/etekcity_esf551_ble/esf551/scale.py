@@ -12,13 +12,19 @@ from ..const import (
     WEIGHT_CHARACTERISTIC_UUID_NOTIFY,
     DISPLAY_UNIT_KEY,
 )
-from .protocol import parse, build_unit_update_payload
+from .protocol import build_unit_update_payload, is_esf551_frame, parse
 
 
 class ESF551Scale(GattScale):
     """ESF-551 scale implementation with full feature support."""
 
     _unit_update_flag: bool = False
+    # The reading last delivered this weigh-in. Some units re-send the final
+    # frame (with a fresh sequence byte and checksum) tens of ms after the
+    # first copy; a final that parses to the same reading is that repeat and
+    # is dropped. A live (settling) frame means a new weigh-in has started
+    # and clears it, as does a new session.
+    _last_delivered: dict[str, int | float | None] | None = None
 
     @GattScale.display_unit.setter
     def display_unit(self, value):
@@ -33,6 +39,7 @@ class ESF551Scale(GattScale):
             ble_device.name,
             ble_device.address,
         )
+        self._last_delivered = None
         # Perform model-specific setup (read versions, handle unit changes, etc.)
         await self._setup_after_connection()
 
@@ -57,7 +64,19 @@ class ESF551Scale(GattScale):
     def _notification_handler(
         self, _: BleakGATTCharacteristic, payload: bytearray, name: str, address: str
     ) -> None:
+        # Dump every frame so a weigh-in can be reconstructed from a debug log;
+        # the branches below only announce the ones they act on.
+        self._logger.debug("ESF-551 RX payload: %s", payload.hex())
         if parsed_data := parse(payload):
+            if parsed_data == self._last_delivered:
+                self._logger.debug(
+                    "ESF-551 repeated final frame from %s; already delivered, "
+                    "ignoring: %s",
+                    address,
+                    parsed_data,
+                )
+                return
+            self._last_delivered = dict(parsed_data)
             self._logger.debug(
                 "Received stable weight notification from %s (%s): %s",
                 name,
@@ -85,6 +104,10 @@ class ESF551Scale(GattScale):
 
             # Call user's callback
             self._notification_callback(scale_data)
+        elif is_esf551_frame(payload):
+            # Live (settling) frame: a weigh-in is in progress, so the next
+            # final is a new reading even if it matches the last one.
+            self._last_delivered = None
 
     async def _setup_after_connection(self) -> None:
         """
