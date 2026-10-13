@@ -140,7 +140,7 @@ async def test_esf24_settling_frames_are_logged_once_per_session():
 
 
 @pytest.mark.asyncio
-async def test_esf24_repeated_final_frame_is_delivered_once_per_session():
+async def test_esf24_repeated_final_frame_is_delivered_once():
     """The scale repeats its final frame (twice a second for 30 s in the
     integration issue #44 log) until end-measurement lands; one weigh-in
     must reach the callback once and schedule end-measurement once."""
@@ -164,6 +164,196 @@ async def test_esf24_repeated_final_frame_is_delivered_once_per_session():
         if c.kwargs.get("name") == "esf24-end-measurement"
     ]
     assert len(end_calls) == 1
+
+
+# --- ESF-24 vendor byte (library issue #17) ---------------------------------
+#
+# The scale's unit request carries a per-scale byte at offset 2 that every
+# reply must echo: 0x15 on the earlier ESF-24 units, 0xff on the issue #17
+# unit. Unanswered, the scale repeats its unit request every ~200 ms and
+# never starts a measurement — the issue #17 log.
+
+_ESF24_UNIT_REQUEST_15 = "120f159ea50b44ac043905320000e8"
+_ESF24_UNIT_REQUEST_FF = "1210ff7720760003ff040505000a054d"
+
+
+@pytest.mark.asyncio
+async def test_esf24_answers_vendor_ff_unit_request_once_with_echoed_byte():
+    logger = Mock()
+    scale = ESF24Scale(
+        "FF:03:00:76:20:77", Mock(), bleak_scanner_backend=Mock(), logger=logger
+    )
+    scale._safe_write = AsyncMock()
+
+    for _ in range(4):
+        scale._notification_handler(
+            "char", bytearray.fromhex(_ESF24_UNIT_REQUEST_FF), "QN-Scale", "addr"
+        )
+        await asyncio.sleep(0)
+
+    sent = [c.args[0].hex() for c in scale._safe_write.call_args_list]
+    assert sent == ["1309ff01102837008b"]
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert not any("unrecognized" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_esf24_vendor_15_unit_request_reply_is_unchanged():
+    scale = ESF24Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
+    scale._safe_write = AsyncMock()
+
+    scale._notification_handler(
+        "char", bytearray.fromhex(_ESF24_UNIT_REQUEST_15), "QN-Scale1", "addr"
+    )
+    await asyncio.sleep(0)
+
+    sent = [c.args[0].hex() for c in scale._safe_write.call_args_list]
+    assert sent == ["1309150110283700a1"]
+
+
+@pytest.mark.asyncio
+async def test_esf24_vendor_ff_session_echoes_byte_through_the_weigh_in():
+    """Unit request → measurement-init request → final frame, all at 0xff:
+    every reply echoes it and the final reaches the callback."""
+    callback = Mock()
+    scale = ESF24Scale(
+        "FF:03:00:76:20:77",
+        callback,
+        bleak_scanner_backend=Mock(),
+        clear_stored_measurements=True,
+    )
+    scale._safe_write = AsyncMock()
+
+    for hx in (
+        _ESF24_UNIT_REQUEST_FF,
+        "140bff000001000000001f",  # measurement-init request
+        "100bff14f000000000001e",  # settling
+        "100bff14f00101fb01f30f",  # final: 53.60 kg, 507 Ω, 499 Ω
+    ):
+        scale._notification_handler("char", bytearray.fromhex(hx), "QN-Scale", "a")
+        await asyncio.sleep(0)
+
+    sent = [c.args[0] for c in scale._safe_write.call_args_list]
+    assert [cmd[0:3].hex() for cmd in sent] == ["1309ff", "2008ff", "1f05ff"]
+    assert sent[-1].hex() == "1f05ff1033"
+    callback.assert_called_once()
+    assert callback.call_args[0][0].measurements == {
+        "weight": 53.60,
+        "impedance": 507,
+        "impedance_500khz": 499,
+    }
+
+
+@pytest.mark.asyncio
+async def test_esf24_padded_measurement_init_request_gets_set_time():
+    """The set-time reply is on the path to a measurement, so a 0x14 frame
+    padded past 11 bytes must still be answered."""
+    scale = ESF24Scale("00:11:22:33:44:55", Mock(), bleak_scanner_backend=Mock())
+    scale._safe_write = AsyncMock()
+
+    scale._notification_handler(
+        "char", bytearray.fromhex("140b15000001000000000035"), "QN-Scale", "a"
+    )
+    await asyncio.sleep(0)
+
+    sent = [c.args[0].hex() for c in scale._safe_write.call_args_list]
+    assert [cmd[0:6] for cmd in sent] == ["200815"]
+
+
+@pytest.mark.asyncio
+async def test_esf24_vendor_ff_set_time_ack_sends_stored_query():
+    """The 0xff units ack set-time with 21 04 ff 01 25; the vendor app
+    answers it with the stored-measurement query, and so do we."""
+    logger = Mock()
+    scale = ESF24Scale(
+        "FF:03:00:76:20:77",
+        Mock(),
+        bleak_scanner_backend=Mock(),
+        clear_stored_measurements=True,
+        logger=logger,
+    )
+    scale._safe_write = AsyncMock()
+
+    for hx in (_ESF24_UNIT_REQUEST_FF, "2104ff0125"):
+        scale._notification_handler("char", bytearray.fromhex(hx), "QN-Scale", "a")
+        await asyncio.sleep(0)
+
+    sent = [c.args[0].hex() for c in scale._safe_write.call_args_list]
+    assert sent[-1] == "2204ff25"
+    messages = [c.args[0] for c in logger.debug.call_args_list]
+    assert not any("unrecognized" in m for m in messages)
+
+
+@pytest.mark.asyncio
+async def test_esf24_delivers_every_weigh_in_of_one_connection():
+    """Issue #17 capture: three weigh-ins in one connection, each final
+    preceded by settling frames. Every one must be delivered and ended,
+    while a final's back-to-back repeats still are not."""
+    callback = Mock()
+    scale = ESF24Scale(
+        "FF:03:00:76:20:77",
+        callback,
+        display_unit=WeightUnit.LB,
+        bleak_scanner_backend=Mock(),
+        clear_stored_measurements=True,
+    )
+    scale._safe_write = AsyncMock()
+
+    frames = (
+        _ESF24_UNIT_REQUEST_FF.replace("0a054d", "000543"),
+        "140bff000001000000001f",
+        "2104ff0125",
+        "2313ff000092a24f32000000000000000000ea",  # store empty
+        "100bff035200000000006f",  # settling
+        "100bff37a00000000000f1",
+        "100bff36740101f501eda9",  # final 1: 139.40 kg (app: 307.4 lb)
+        "100bff36740101f501eda9",  # repeat, before end-measurement lands
+        "100bff015e000000000079",  # next step-on
+        "100bff389a0101f801f4db",  # final 2: 144.90 kg (app: 319.4 lb)
+        "100bff06f4000000000014",  # next step-on
+        "100bff37a00101fa01fae8",  # final 3: 142.40 kg (app: 314.0 lb)
+    )
+    for hx in frames:
+        scale._notification_handler("char", bytearray.fromhex(hx), "QN-Scale", "a")
+        await asyncio.sleep(0)
+
+    assert [c.args[0].measurements for c in callback.call_args_list] == [
+        {"weight": 139.40, "impedance": 501, "impedance_500khz": 493},
+        {"weight": 144.90, "impedance": 504, "impedance_500khz": 500},
+        {"weight": 142.40, "impedance": 506, "impedance_500khz": 506},
+    ]
+    sent = [c.args[0].hex() for c in scale._safe_write.call_args_list]
+    assert [cmd[0:6] for cmd in sent] == [
+        "1309ff",
+        "2008ff",
+        "2204ff",
+        "1f05ff",
+        "1f05ff",
+        "1f05ff",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_esf24_session_start_resets_vendor_byte():
+    scale = ESF24Scale("FF:03:00:76:20:77", Mock(), bleak_scanner_backend=Mock())
+    scale._safe_write = AsyncMock()
+    scale._notification_handler(
+        "char", bytearray.fromhex(_ESF24_UNIT_REQUEST_FF), "QN-Scale", "addr"
+    )
+    scale._client = AsyncMock()
+    scale._client.services.get_characteristic = Mock(return_value=Mock())
+    ble_device = Mock(spec=BLEDevice)
+    ble_device.address = "FF:03:00:76:20:77"
+    ble_device.name = "QN-Scale"
+
+    await scale._start_scale_session(ble_device)
+
+    # A 0x15 final in the new session is recognized again.
+    callback = scale._notification_callback
+    scale._notification_handler(
+        "char", bytearray.fromhex("100b152b4801016b013445"), "QN-Scale", "addr"
+    )
+    callback.assert_called_once()
 
 
 # --- ESF-24 stored offline measurements -------------------------------------

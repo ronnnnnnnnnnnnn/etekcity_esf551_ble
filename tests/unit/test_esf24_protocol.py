@@ -6,11 +6,15 @@ import pytest
 
 from src.etekcity_esf551_ble.esf24.protocol import (
     _EPOCH_OFFSET,
+    build_end_measurement_command,
     build_measurement_initiation_command,
     build_stored_measurement_query,
     build_unit_update_command,
     is_measurement_frame,
+    is_measurement_init_request,
+    is_set_time_ack,
     is_stored_measurement_frame,
+    is_unit_request_frame,
     parse_stored_measurement,
     parse_weight,
 )
@@ -18,7 +22,7 @@ from src.etekcity_esf551_ble.data import WeightUnit
 
 
 def test_build_unit_update_command():
-    # The low nibble of bytes 3 and 8 encodes the unit (kg=1, lb=2, st=8);
+    # Byte 3 encodes the unit (kg=1, lb=2, st=8) and byte 8 is the checksum;
     # the rest of the template command is left untouched.
     assert build_unit_update_command(WeightUnit.KG).hex() == "1309150110283700a1"
     assert build_unit_update_command(WeightUnit.LB).hex() == "1309150210283700a2"
@@ -288,3 +292,133 @@ def test_parse_stored_measurement_16_byte_variant_rejects_bad_checksum():
     bad = bytearray.fromhex("231015020112213932238c023c0216ee")
     bad[9] ^= 0x01
     assert parse_stored_measurement(bad) is None
+
+
+# --- Vendor byte (library issue #17) ----------------------------------------
+#
+# Byte 2 of every frame is a per-scale "scale type" the vendor decoders read
+# from the 0x12 unit request and echo in every command. The ESF-24 units seen
+# before used 0x15; an FF:03:00 "QN-Scale" sold as an ESF-24 uses 0xff, like
+# Renpho's QN scales. The 0xff frames below without an issue-#17 source are
+# from a Renpho ES-CS20MN vendor-app capture, which runs the same command
+# sequence with 0xff echoed throughout.
+
+_UNIT_REQUEST_ISSUE_17 = "1210ff7720760003ff040505000a054d"
+
+
+@pytest.mark.parametrize(
+    "hx",
+    [
+        "120f159ea50b44ac043905320000e8",  # ESF-24, 15 bytes
+        _UNIT_REQUEST_ISSUE_17,  # issue #17, 16 bytes
+        "1211ff230a670003ff03030500000507cf",  # ES-CS20MN, 17 bytes
+    ],
+)
+def test_is_unit_request_frame_accepts_every_length_and_vendor_byte(hx):
+    assert is_unit_request_frame(bytearray.fromhex(hx))
+
+
+def test_is_unit_request_frame_rejects_other_frames():
+    assert not is_unit_request_frame(bytearray.fromhex("120f15"))  # truncated
+    assert not is_unit_request_frame(bytearray.fromhex("140b150000000000000000"))
+    assert not is_unit_request_frame(bytearray.fromhex("100b152b4801016b013445"))
+
+
+def test_build_unit_update_command_echoes_vendor_byte():
+    # Byte 8 is a mod-256 checksum, recomputed for the echoed byte.
+    assert (
+        build_unit_update_command(WeightUnit.KG, vendor_byte=0xFF).hex()
+        == "1309ff01102837008b"
+    )
+    assert (
+        build_unit_update_command(WeightUnit.LB, vendor_byte=0xFF).hex()
+        == "1309ff02102837008c"
+    )
+
+
+def test_build_measurement_initiation_command_echoes_vendor_byte():
+    cmd = build_measurement_initiation_command(vendor_byte=0xFF)
+    assert cmd[0:3] == b"\x20\x08\xff"
+    assert cmd[7] == sum(cmd[0:7]) & 0xFF
+
+
+def test_build_end_measurement_command():
+    assert build_end_measurement_command().hex() == "1f05151049"
+    assert build_end_measurement_command(vendor_byte=0xFF).hex() == "1f05ff1033"
+
+
+def test_build_stored_measurement_query_echoes_vendor_byte():
+    assert build_stored_measurement_query(vendor_byte=0xFF).hex() == "2204ff25"
+
+
+@pytest.mark.parametrize(
+    "hx,vendor_byte",
+    [
+        ("140b150000010000000035", 0x15),  # every capture: 11 bytes
+        ("140bff000001000000001f", 0xFF),
+        # Padded like the integration issue #44 unit's 0x10 frames: zero at
+        # index 10, checksum last. Only the minimum length is bounded.
+        ("140b15000001000000000035", 0x15),
+    ],
+)
+def test_is_measurement_init_request_accepts(hx, vendor_byte):
+    assert is_measurement_init_request(bytearray.fromhex(hx), vendor_byte)
+
+
+def test_is_measurement_init_request_rejects_other_frames():
+    assert not is_measurement_init_request(bytearray.fromhex("140b1500000100"))
+    assert not is_measurement_init_request(
+        bytearray.fromhex("140bff000001000000001f")  # another session's byte
+    )
+    assert not is_measurement_init_request(
+        bytearray.fromhex("100b152b4801016b013445")
+    )
+
+
+def test_is_set_time_ack_accepts_both_capture_verified_shapes():
+    # 0x15 units: 21 05 15 01 3c. 0xff units: 21 04 ff 01 25 — five bytes
+    # on the wire although the length byte says four (issue #17 capture).
+    assert is_set_time_ack(bytearray.fromhex("210515013c"))
+    assert is_set_time_ack(bytearray.fromhex("2104ff0125"), vendor_byte=0xFF)
+
+
+def test_is_set_time_ack_takes_either_length_byte_from_any_vendor():
+    # The ESF-24 client is basic-flavor only, so the length byte does not
+    # select a flavor here: 21 04 and 21 05 are both the ack, whatever the
+    # session's vendor byte.
+    assert is_set_time_ack(bytearray.fromhex("2105ff0126"), vendor_byte=0xFF)
+    assert is_set_time_ack(bytearray.fromhex("2104150124"))
+
+
+def test_is_set_time_ack_rejects_other_shapes():
+    assert not is_set_time_ack(bytearray.fromhex("2106ff01547b"), vendor_byte=0xFF)
+    assert not is_set_time_ack(bytearray.fromhex("21051501"))  # truncated
+    # A frame from another session's vendor byte is not ours.
+    assert not is_set_time_ack(bytearray.fromhex("2104ff0125"))
+
+
+def test_measurement_frames_match_the_sessions_vendor_byte():
+    # ES-CS20MN final: 53.60 kg, resistances 507 Ω and 499 Ω.
+    final = bytearray.fromhex("100bff14f00101fb01f30f")
+    assert is_measurement_frame(final, vendor_byte=0xFF)
+    assert parse_weight(final, vendor_byte=0xFF) == {
+        "weight": 53.60,
+        "impedance": 507,
+        "impedance_500khz": 499,
+    }
+    # Not a match for a session that negotiated a different byte.
+    assert not is_measurement_frame(final)
+    assert parse_weight(final) is None
+
+
+def test_stored_records_match_the_sessions_vendor_byte():
+    # ES-CS20MN's 19-byte record: same offsets, three reserved bytes.
+    record = bytearray.fromhex("2313ff04015dcdb6311cd901fc01f00000002e")
+    assert is_stored_measurement_frame(record, vendor_byte=0xFF)
+    frame = parse_stored_measurement(record, vendor_byte=0xFF)
+    assert (frame.count, frame.index) == (4, 1)
+    assert frame.measurements == {
+        "weight": 73.85,
+        "impedance": 508,
+        "impedance_500khz": 496,
+    }

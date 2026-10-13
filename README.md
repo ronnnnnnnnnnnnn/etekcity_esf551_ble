@@ -188,7 +188,7 @@ Two manufacturer-data frame families, both observed in real advertisement captur
 
 **Company ID 1744 (Etekcity platform):** `[0]=0x01, [1:7]=device MAC little-endian, [7:9]=model identifier BE16, [9:]=model-specific payload`
 
-**Company ID 65535 (QN platform, ESF-24):** `[0:2]=model identifier BE16, [2]=0x01, [3]=varies (undecoded), [4]=pending stored-record count, [5:11]=device MAC little-endian`
+**Company ID 65535 (QN platform, ESF-24):** `[0:2]=model identifier BE16, [2]=0x01 or 0x00 (varies by hardware revision), [3]=varies (undecoded), [4]=pending stored-record count, [5:11]=device MAC little-endian`
 
 | Model | Company | Codes |
 |---|---|---|

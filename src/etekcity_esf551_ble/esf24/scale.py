@@ -16,12 +16,16 @@ from ..data import (
     WeightUnit,
 )
 from .protocol import (
-    CMD_END_MEASUREMENT,
+    _DEFAULT_VENDOR_BYTE,
+    build_end_measurement_command,
     build_measurement_initiation_command,
     build_stored_measurement_query,
     build_unit_update_command,
     is_measurement_frame,
+    is_measurement_init_request,
+    is_set_time_ack,
     is_stored_measurement_frame,
+    is_unit_request_frame,
     parse_stored_measurement,
     parse_weight,
 )
@@ -31,14 +35,14 @@ _STATE_MEASUREMENT_INIT = 2
 _STATE_SETTLING_LOGGED = 4
 # Set once the stored-measurement query has been sent this session.
 _STATE_STORED_QUERY = 8
-# Set once a final frame has been delivered this session. The scale repeats
-# the final frame (about twice a second) until our end-measurement command
-# lands, and one weigh-in must reach the callback exactly once.
+# Set once the current weigh-in's final frame has been delivered. The scale
+# repeats the final frame back to back (about twice a second) until our
+# end-measurement command lands, and one weigh-in must reach the callback
+# exactly once. Cleared by the next settling frame: the connection can
+# outlive a weigh-in (three in one connection in the library issue #17
+# capture), and settling frames only follow a final once the scale has
+# stopped repeating it.
 _STATE_FINAL_DELIVERED = 16
-
-# Ack of our set-time (0x20) command, capture-verified: 21 05 15 01 3c.
-_SET_TIME_ACK_FRAME_PREFIX = b"\x21\x05\x15"
-_SET_TIME_ACK_FRAME_LENGTH = 5
 
 # Stored offline-measurement record. Matched on the opcode alone so a
 # record whose shape the parser rejects still reaches the handler's warning.
@@ -93,6 +97,8 @@ class ESF24Scale(GattScale):
             logger,
         )
         self._state_mask = 0
+        # Echoed at byte 2 of every command; learned from the unit request.
+        self._vendor_byte = _DEFAULT_VENDOR_BYTE
         self._clear_stored_measurements = clear_stored_measurements
 
     @GattScale.display_unit.setter
@@ -104,6 +110,7 @@ class ESF24Scale(GattScale):
     async def _start_scale_session(self, ble_device: BLEDevice) -> None:
         """Handle post-connection setup and start notifications."""
         self._state_mask = 0
+        self._vendor_byte = _DEFAULT_VENDOR_BYTE
         self._logger.debug(
             "ESF-24 starting session for device %s (%s)",
             ble_device.name,
@@ -132,7 +139,7 @@ class ESF24Scale(GattScale):
         # Dump every frame so a weigh-in can be reconstructed from a debug log;
         # the branches below only announce the ones they act on.
         self._logger.debug("ESF-24 RX payload: %s", payload.hex())
-        if data := parse_weight(payload):
+        if data := parse_weight(payload, self._vendor_byte):
             if self._state_mask & _STATE_FINAL_DELIVERED:
                 self._logger.debug(
                     "ESF-24 repeated final frame from %s; already delivered, "
@@ -147,7 +154,8 @@ class ESF24Scale(GattScale):
                 address,
             )
             self._spawn_task(
-                self._safe_write(CMD_END_MEASUREMENT), name="esf24-end-measurement"
+                self._safe_write(build_end_measurement_command(self._vendor_byte)),
+                name="esf24-end-measurement",
             )
 
             scale_data = ScaleData()
@@ -157,38 +165,45 @@ class ESF24Scale(GattScale):
             scale_data.measurements = data
 
             self._notification_callback(scale_data)
-        elif is_measurement_frame(payload):
+        elif is_measurement_frame(payload, self._vendor_byte):
             # Measurement frames stream continuously while the weight settles,
             # dozens per weigh-in, and only the final one carries a reading.
-            # Log the first to show the stream arrived, then stay quiet.
+            # Log the first of each weigh-in to show the stream arrived, then
+            # stay quiet.
+            if self._state_mask & _STATE_FINAL_DELIVERED:
+                self._state_mask &= ~(_STATE_FINAL_DELIVERED | _STATE_SETTLING_LOGGED)
             if not self._state_mask & _STATE_SETTLING_LOGGED:
                 self._state_mask |= _STATE_SETTLING_LOGGED
                 self._logger.debug(
                     "ESF-24 weight settling on %s; waiting for the final frame.",
                     address,
                 )
-        elif len(payload) == 15 and payload[0:3] == b"\x12\x0f\x15":
+        elif is_unit_request_frame(payload):
+            if payload[2] != self._vendor_byte:
+                self._logger.debug(
+                    "ESF-24 %s uses vendor byte 0x%02x; replies will echo it.",
+                    address,
+                    payload[2],
+                )
+                self._vendor_byte = payload[2]
             if not self._state_mask & _STATE_UNIT_SET:
                 self._state_mask |= _STATE_UNIT_SET
                 self._logger.debug(
                     "ESF-24 unit negotiation frame received from %s. Scheduling update.",
                     address,
                 )
-                cmd = build_unit_update_command(self.display_unit)
+                cmd = build_unit_update_command(self.display_unit, self._vendor_byte)
                 self._spawn_task(self._safe_write(cmd), name="esf24-unit-update")
-        elif len(payload) == 11 and payload[0:3] == b"\x14\x0b\x15":
+        elif is_measurement_init_request(payload, self._vendor_byte):
             if not self._state_mask & _STATE_MEASUREMENT_INIT:
                 self._state_mask |= _STATE_MEASUREMENT_INIT
                 self._logger.debug(
                     "ESF-24 measurement initiation requested by %s. Sending timestamp.",
                     address,
                 )
-                cmd = build_measurement_initiation_command()
+                cmd = build_measurement_initiation_command(self._vendor_byte)
                 self._spawn_task(self._safe_write(cmd), name="esf24-measurement-init")
-        elif (
-            len(payload) == _SET_TIME_ACK_FRAME_LENGTH
-            and payload[0:3] == _SET_TIME_ACK_FRAME_PREFIX
-        ):
+        elif is_set_time_ack(payload, self._vendor_byte):
             # Ack of our set-time command. Recognized even with the drain
             # disabled so it is never logged as unrecognized; it doubles as
             # the trigger for the stored-measurement query because that is
@@ -222,7 +237,7 @@ class ESF24Scale(GattScale):
             address,
         )
         self._spawn_task(
-            self._safe_write(build_stored_measurement_query()),
+            self._safe_write(build_stored_measurement_query(self._vendor_byte)),
             name="esf24-stored-query",
         )
 
@@ -235,15 +250,15 @@ class ESF24Scale(GattScale):
         receiving and discarding it here is what clears the store. Never
         fires the measurement callback.
         """
-        if not is_stored_measurement_frame(payload):
+        if not is_stored_measurement_frame(payload, self._vendor_byte):
             self._logger.warning(
                 "ESF-24 stored-measurement frame from %s has unexpected "
-                "length; ignoring: %s",
+                "length or vendor byte; ignoring: %s",
                 address,
                 payload.hex(),
             )
             return
-        frame = parse_stored_measurement(payload)
+        frame = parse_stored_measurement(payload, self._vendor_byte)
         if frame is None:
             self._logger.warning(
                 "ESF-24 stored-measurement frame from %s failed its checksum; "
